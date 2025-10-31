@@ -3,245 +3,409 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Flujo Creativo Grid</title>
+  <title>Content Grid</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
-<body>
-  <header class="fc-header">
-    <div class="fc-title-wrap">
-      <h1 class="fc-title">Posts <span id="fc-count" class="fc-count"></span></h1>
-    </div>
-    <div class="fc-actions">
-      <button id="fc-refresh" class="fc-btn">Refresh</button>
-      <input id="fc-search" class="fc-input" type="search" placeholder="Buscar..." />
-    </div>
-  </header>
+<body class="fc-body">
+  <!-- WRAPPER -->
+  <div class="fc-page">
+    <!-- HEADER / TOOLBAR -->
+    <header class="fc-header">
+      <div class="fc-header-left">
+        <h1 class="fc-title">Posts <span id="fc-count" class="fc-count"></span></h1>
+      </div>
+      <div class="fc-header-right">
+        <button id="fc-refresh" class="fc-btn fc-btn-secondary">Refresh</button>
+        <div class="fc-search-wrap">
+          <input id="fc-search" type="search" class="fc-input" placeholder="Buscar..." />
+        </div>
+      </div>
+    </header>
 
-  <section class="fc-filters">
-    <select id="fc-clients" class="fc-select">
-      <option value="">All Clients</option>
-    </select>
-    <select id="fc-projects" class="fc-select">
-      <option value="">All Projects</option>
-    </select>
-    <select id="fc-brands" class="fc-select" disabled>
-      <option value="">All Brands</option>
-    </select>
-    <select id="fc-platforms" class="fc-select">
-      <option value="">All Platforms</option>
-      <option value="Instagram">Instagram</option>
-      <option value="Tiktok">Tiktok</option>
-      <option value="Youtube">Youtube</option>
-      <option value="Facebook">Facebook</option>
-      <option value="Página web">Página web</option>
-      <option value="Pantalla">Pantalla</option>
-    </select>
-    <select id="fc-status" class="fc-select">
-      <option value="published">Published Only</option>
-      <option value="all">All Status</option>
-    </select>
-  </section>
+    <!-- FILTER BAR -->
+    <section class="fc-filters">
+      <div class="fc-filters-row">
+        <select id="fc-client" class="fc-select">
+          <option value="all">All Clients</option>
+        </select>
 
-  <main id="fc-grid" class="fc-grid"></main>
+        <select id="fc-project" class="fc-select">
+          <option value="all">All Projects</option>
+        </select>
 
-  <div class="fc-loadmore">
-    <button id="fc-more" class="fc-btn" style="display:none;">Load more</button>
+        <select id="fc-brand" class="fc-select" disabled>
+          <option value="all">All Brands</option>
+        </select>
+
+        <select id="fc-platform" class="fc-select">
+          <option value="all">All Platforms</option>
+        </select>
+
+        <select id="fc-status" class="fc-select">
+          <option value="published">Published Only</option>
+          <option value="all">All Status</option>
+        </select>
+      </div>
+
+      <!-- chips dinámicos -->
+      <div id="fc-chips" class="fc-chips"></div>
+    </section>
+
+    <!-- GRID -->
+    <main class="fc-main">
+      <div id="fc-grid" class="fc-grid">
+        <!-- aquí se pintan las cards -->
+      </div>
+      <div class="fc-loadmore">
+        <button id="fc-loadmore" class="fc-btn" style="display:none;">Load more</button>
+      </div>
+      <div id="fc-error" class="fc-error" style="display:none;"></div>
+    </main>
   </div>
 
-  <!-- modal -->
-  <div id="fc-modal" class="fc-modal" hidden>
+  <!-- MODAL -->
+  <div id="fc-modal" class="fc-modal" aria-hidden="true">
+    <div class="fc-modal-backdrop" id="fc-modal-backdrop"></div>
     <div class="fc-modal-content">
-      <button id="fc-modal-close" class="fc-modal-close">×</button>
-      <div id="fc-modal-media" class="fc-modal-media"></div>
-      <p id="fc-modal-copy" class="fc-modal-copy"></p>
-      <p id="fc-modal-meta" class="fc-modal-meta"></p>
+      <button id="fc-modal-close" class="fc-modal-close" aria-label="Cerrar">×</button>
+      <div class="fc-modal-media" id="fc-modal-media"></div>
+      <div class="fc-modal-copy" id="fc-modal-copy"></div>
+      <div class="fc-modal-meta" id="fc-modal-meta"></div>
+      <!-- indicadores carrusel si quieres luego -->
     </div>
   </div>
 
   <script>
+  // ==============================
+  //  ESTADO
+  // ==============================
   const state = {
-    posts: [],
-    cursor: null,
+    items: [],
+    nextCursor: null,
     filters: {
-      client: "",
-      project: "",
-      brand: "",
-      platform: "",
-      status: "published",
-      q: ""
+      client: 'all',
+      project: 'all',
+      brand: 'all',
+      platform: 'all',
+      status: 'published',
+      q: ''
     }
   };
 
-  const grid = document.getElementById('fc-grid');
-  const count = document.getElementById('fc-count');
-  const btnMore = document.getElementById('fc-more');
+  // ==============================
+  //  ELEMENTOS
+  // ==============================
+  const elGrid     = document.getElementById('fc-grid');
+  const elCount    = document.getElementById('fc-count');
+  const elError    = document.getElementById('fc-error');
+  const elLoadMore = document.getElementById('fc-loadmore');
 
-  async function loadPosts(reset = true) {
-    const params = new URLSearchParams();
-    params.set("limit", "12");
-    if (state.filters.status) params.set("status", state.filters.status);
-    if (state.filters.client) params.set("client", state.filters.client);
-    if (state.filters.project) params.set("project", state.filters.project);
-    if (state.filters.brand) params.set("brand", state.filters.brand);
-    if (state.filters.platform) params.set("platform", state.filters.platform);
-    if (state.filters.q) params.set("q", state.filters.q);
-    if (!reset && state.cursor) params.set("cursor", state.cursor);
+  const elClient   = document.getElementById('fc-client');
+  const elProject  = document.getElementById('fc-project');
+  const elBrand    = document.getElementById('fc-brand');
+  const elPlatform = document.getElementById('fc-platform');
+  const elStatus   = document.getElementById('fc-status');
+  const elSearch   = document.getElementById('fc-search');
+  const elRefresh  = document.getElementById('fc-refresh');
+  const elChips    = document.getElementById('fc-chips');
 
-    const res = await fetch("/api/grid?" + params.toString());
+  const elModal       = document.getElementById('fc-modal');
+  const elModalClose  = document.getElementById('fc-modal-close');
+  const elModalMedia  = document.getElementById('fc-modal-media');
+  const elModalCopy   = document.getElementById('fc-modal-copy');
+  const elModalMeta   = document.getElementById('fc-modal-meta');
+  const elModalBackdrop = document.getElementById('fc-modal-backdrop');
+
+  // ==============================
+  //  FETCH
+  // ==============================
+  async function fetchPosts(reset = true) {
+    let qs = new URLSearchParams();
+    if (state.filters.client !== 'all')   qs.set('client', state.filters.client);
+    if (state.filters.project !== 'all')  qs.set('project', state.filters.project);
+    if (state.filters.brand !== 'all')    qs.set('brand', state.filters.brand);
+    if (state.filters.platform !== 'all') qs.set('platform', state.filters.platform);
+    if (state.filters.status)             qs.set('status', state.filters.status);
+    if (state.filters.q)                  qs.set('q', state.filters.q);
+    qs.set('limit', '12');
+    if (!reset && state.nextCursor)       qs.set('cursor', state.nextCursor);
+
+    const res = await fetch('/api/grid?' + qs.toString());
     const json = await res.json();
 
     if (!json.ok) {
-      grid.innerHTML = '<div class="fc-empty">Error cargando posts</div>';
+      showError(json.error || 'Error cargando posts');
       return;
     }
 
+    hideError();
+
+    const posts = json.posts || [];
     if (reset) {
-      state.posts = json.posts || [];
+      state.items = posts;
     } else {
-      state.posts = state.posts.concat(json.posts || []);
+      state.items = state.items.concat(posts);
     }
-    state.cursor = json.next_cursor || null;
 
-    renderFilters(json.filters || {});
+    state.nextCursor = json.next_cursor || null;
     renderGrid();
+    renderFiltersFromMeta(json.filters || {});
 
-    btnMore.style.display = state.cursor ? 'inline-flex' : 'none';
+    // loadmore
+    elLoadMore.style.display = state.nextCursor ? 'inline-flex' : 'none';
   }
 
-  function renderFilters(f) {
-    // clients
-    const selC = document.getElementById('fc-clients');
-    selC.innerHTML = '<option value="">All Clients</option>';
-    (f.clients || []).forEach(c => {
-      const o = document.createElement('option');
-      o.value = c;
-      o.textContent = c;
-      selC.appendChild(o);
+  // ==============================
+  //  RENDER
+  // ==============================
+  function renderGrid() {
+    elGrid.innerHTML = '';
+    if (!state.items.length) {
+      elGrid.innerHTML = '<div class="fc-empty">No hay posts</div>';
+      elCount.textContent = '';
+      return;
+    }
+
+    state.items.forEach(post => {
+      elGrid.appendChild(renderCard(post));
     });
-    selC.disabled = !(f.clients || []).length;
+
+    elCount.textContent = '(' + state.items.length + ')';
+    renderChips();
+  }
+
+  function renderCard(post) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'fc-card';
+
+    // media
+    let mediaHtml = '<div class="fc-card-media fc-card-placeholder">No image</div>';
+    const mainAsset = (post.assets && post.assets[0]) || null;
+    if (mainAsset) {
+      if (mainAsset.type === 'video') {
+        mediaHtml = `
+          <div class="fc-card-media">
+            <video src="${mainAsset.url}" muted playsinline></video>
+            <span class="fc-badge fc-badge-video">▶</span>
+          </div>
+        `;
+      } else {
+        mediaHtml = `
+          <div class="fc-card-media">
+            <img src="${mainAsset.url}" alt="${escapeHtml(post.title || '')}" />
+          </div>
+        `;
+      }
+    }
+
+    // overlay (title + date)
+    const metaText = [
+      post.client,
+      post.project,
+      post.date
+    ].filter(Boolean).join(' · ');
+
+    btn.innerHTML = `
+      ${mediaHtml}
+      <div class="fc-card-overlay">
+        <div class="fc-card-title">${escapeHtml(post.title || '')}</div>
+        <div class="fc-card-meta">${escapeHtml(metaText)}</div>
+      </div>
+    `;
+
+    // autoplay hover
+    btn.addEventListener('mouseenter', () => {
+      const v = btn.querySelector('video');
+      if (v) v.play().catch(() => {});
+    });
+    btn.addEventListener('mouseleave', () => {
+      const v = btn.querySelector('video');
+      if (v) {
+        v.pause();
+        v.currentTime = 0;
+      }
+    });
+
+    btn.addEventListener('click', () => openModal(post));
+    return btn;
+  }
+
+  function renderFiltersFromMeta(meta) {
+    // clients
+    if (Array.isArray(meta.clients) && meta.clients.length) {
+      elClient.innerHTML = '<option value="all">All Clients</option>' +
+        meta.clients.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      elClient.disabled = false;
+    } else {
+      elClient.innerHTML = '<option value="all">All Clients</option>';
+      elClient.disabled = false;
+    }
 
     // projects
-    const selP = document.getElementById('fc-projects');
-    selP.innerHTML = '<option value="">All Projects</option>';
-    (f.projects || []).forEach(p => {
-      const o = document.createElement('option');
-      o.value = p;
-      o.textContent = p;
-      selP.appendChild(o);
-    });
+    if (Array.isArray(meta.projects) && meta.projects.length) {
+      elProject.innerHTML = '<option value="all">All Projects</option>' +
+        meta.projects.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+    }
 
     // brands
-    const selB = document.getElementById('fc-brands');
-    selB.innerHTML = '<option value="">All Brands</option>';
-    (f.brands || []).forEach(b => {
-      const o = document.createElement('option');
-      o.value = b;
-      o.textContent = b;
-      selB.appendChild(o);
-    });
-    selB.disabled = !(f.brands || []).length;
-  }
-
-  function renderGrid() {
-    grid.innerHTML = '';
-    if (!state.posts.length) {
-      grid.innerHTML = '<div class="fc-empty">No posts</div>';
-      count.textContent = '';
-      return;
-    }
-    count.textContent = '(' + state.posts.length + ')';
-
-    state.posts.forEach(p => {
-      const card = document.createElement('button');
-      card.className = 'fc-card';
-      card.type = 'button';
-
-      const main = (p.assets && p.assets[0]) || null;
-      const media = main && main.url && !main.url.includes('drive.google.com')
-        ? `<img src="${main.url}" alt="${escapeHtml(p.title || '')}" class="fc-media" />`
-        : `<div class="fc-media fc-media--empty">No image</div>`;
-
-      card.innerHTML = `
-        <div class="fc-media-wrap">
-          ${media}
-          ${p.owner ? `<span class="fc-badge-owner">${escapeHtml(p.owner.slice(0,2).toUpperCase())}</span>` : ''}
-          ${main && main.type === 'video' ? `<span class="fc-badge fc-badge-video">▶</span>` : ''}
-          ${p.assets && p.assets.length > 1 ? `<span class="fc-badge fc-badge-multi">IG</span>` : ''}
-        </div>
-        <div class="fc-card-overlay">
-          <div class="fc-card-title">${escapeHtml(p.title || '')}</div>
-          <div class="fc-card-meta">${escapeHtml(p.client || '')}${p.project ? ' · ' + escapeHtml(p.project) : ''}${p.date ? ' · ' + p.date : ''}</div>
-        </div>
-      `;
-
-      // hover video
-      if (main && main.type === 'video') {
-        const v = card.querySelector('video');
-        if (v) {
-          card.addEventListener('mouseenter', () => v.play().catch(() => {}));
-          card.addEventListener('mouseleave', () => { v.pause(); v.currentTime = 0; });
-        }
-      }
-
-      card.addEventListener('click', () => openModal(p));
-      grid.appendChild(card);
-    });
-  }
-
-  function openModal(post) {
-    const modal = document.getElementById('fc-modal');
-    const mediaWrap = document.getElementById('fc-modal-media');
-    const copyEl = document.getElementById('fc-modal-copy');
-    const metaEl = document.getElementById('fc-modal-meta');
-
-    const main = (post.assets && post.assets[0]) || null;
-    if (main && main.type === 'video') {
-      mediaWrap.innerHTML = `<video src="${main.url}" controls playsinline style="width:100%;border-radius:16px;"></video>`;
-    } else if (main && main.url) {
-      mediaWrap.innerHTML = `<img src="${main.url}" style="width:100%;border-radius:16px;" />`;
+    if (Array.isArray(meta.brands) && meta.brands.length) {
+      elBrand.innerHTML = '<option value="all">All Brands</option>' +
+        meta.brands.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+      elBrand.disabled = false;
     } else {
-      mediaWrap.innerHTML = `<div style="padding:40px 0;text-align:center;color:#999;">No media</div>`;
+      elBrand.innerHTML = '<option value="all">All Brands</option>';
+      elBrand.disabled = true;
     }
 
-    copyEl.textContent = post.copy || '';
-    copyEl.style.display = post.copy ? 'block' : 'none';
+    // platforms
+    if (Array.isArray(meta.platforms) && meta.platforms.length) {
+      elPlatform.innerHTML = '<option value="all">All Platforms</option>' +
+        meta.platforms.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
+    }
+  }
 
-    metaEl.textContent = [post.client, post.project, post.date].filter(Boolean).join(' · ');
+  function renderChips() {
+    const f = state.filters;
+    const parts = [];
+    if (f.client !== 'all') parts.push(makeChip('Client', f.client, () => { state.filters.client='all'; fetchPosts(true); }));
+    if (f.project !== 'all') parts.push(makeChip('Project', f.project, () => { state.filters.project='all'; fetchPosts(true); }));
+    if (f.brand !== 'all') parts.push(makeChip('Brand', f.brand, () => { state.filters.brand='all'; fetchPosts(true); }));
+    if (f.platform !== 'all') parts.push(makeChip('Platform', f.platform, () => { state.filters.platform='all'; fetchPosts(true); }));
+    if (f.status !== 'published') parts.push(makeChip('Status', f.status, () => { state.filters.status='published'; fetchPosts(true); }));
+    if (f.q) parts.push(makeChip('Search', f.q, () => { state.filters.q=''; elSearch.value=''; fetchPosts(true); }));
 
-    modal.hidden = false;
+    elChips.innerHTML = parts.join('');
+  }
+
+  function makeChip(label, value, onRemove) {
+    const id = 'fc-chip-' + Math.random().toString(36).slice(2);
+    queueMicrotask(() => {
+      const btn = document.getElementById(id);
+      if (btn) btn.onclick = onRemove;
+    });
+    return `<span class="fc-chip">${label}: ${escapeHtml(value)} <button id="${id}" type="button" class="fc-chip-x">×</button></span>`;
+  }
+
+  // ==============================
+  //  MODAL
+  // ==============================
+  function openModal(post) {
+    // media
+    elModalMedia.innerHTML = '';
+    const main = (post.assets && post.assets[0]) || null;
+    if (main) {
+      if (main.type === 'video') {
+        const v = document.createElement('video');
+        v.src = main.url;
+        v.controls = true;
+        v.playsInline = true;
+        v.autoplay = true;
+        elModalMedia.appendChild(v);
+      } else {
+        const img = document.createElement('img');
+        img.src = main.url;
+        img.alt = post.title || '';
+        elModalMedia.appendChild(img);
+      }
+    } else {
+      elModalMedia.innerHTML = '<div class="fc-modal-empty">Sin media</div>';
+    }
+
+    // copy
+    if (post.copy) {
+      elModalCopy.textContent = post.copy;
+      elModalCopy.style.display = 'block';
+    } else {
+      elModalCopy.style.display = 'none';
+    }
+
+    // meta
+    const metaText = [
+      post.title,
+      post.client,
+      post.project,
+      post.date
+    ].filter(Boolean).join(' · ');
+    elModalMeta.textContent = metaText;
+
+    elModal.setAttribute('aria-hidden', 'false');
+    elModal.classList.add('is-open');
   }
 
   function closeModal() {
-    const modal = document.getElementById('fc-modal');
-    modal.hidden = true;
-    const mediaWrap = document.getElementById('fc-modal-media');
-    mediaWrap.innerHTML = '';
+    elModal.setAttribute('aria-hidden', 'true');
+    elModal.classList.remove('is-open');
+    elModalMedia.innerHTML = '';
   }
 
-  document.getElementById('fc-modal-close').onclick = closeModal;
-  document.getElementById('fc-modal').addEventListener('click', e => {
-    if (e.target.id === 'fc-modal') closeModal();
+  elModalClose.addEventListener('click', closeModal);
+  elModalBackdrop.addEventListener('click', closeModal);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && elModal.classList.contains('is-open')) {
+      closeModal();
+    }
   });
 
-  function escapeHtml(s) {
-    return String(s || "").replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  // ==============================
+  //  ERRORES
+  // ==============================
+  function showError(msg) {
+    elError.style.display = 'block';
+    elError.textContent = msg;
+    elGrid.innerHTML = '';
+  }
+  function hideError() {
+    elError.style.display = 'none';
+    elError.textContent = '';
   }
 
-  // events filters
-  document.getElementById('fc-refresh').onclick = () => loadPosts(true);
-  document.getElementById('fc-more').onclick = () => loadPosts(false);
-  document.getElementById('fc-clients').onchange = e => { state.filters.client = e.target.value; loadPosts(true); };
-  document.getElementById('fc-projects').onchange = e => { state.filters.project = e.target.value; loadPosts(true); };
-  document.getElementById('fc-brands').onchange = e => { state.filters.brand = e.target.value; loadPosts(true); };
-  document.getElementById('fc-platforms').onchange = e => { state.filters.platform = e.target.value; loadPosts(true); };
-  document.getElementById('fc-status').onchange = e => { state.filters.status = e.target.value; loadPosts(true); };
-  document.getElementById('fc-search').oninput = e => {
-    state.filters.q = e.target.value.trim();
-    clearTimeout(window.__fcT);
-    window.__fcT = setTimeout(() => loadPosts(true), 250);
-  };
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
 
-  loadPosts(true);
+  // ==============================
+  //  EVENTOS
+  // ==============================
+  elRefresh.addEventListener('click', () => fetchPosts(true));
+  elLoadMore.addEventListener('click', () => fetchPosts(false));
+
+  elClient.addEventListener('change', () => {
+    state.filters.client = elClient.value;
+    fetchPosts(true);
+  });
+  elProject.addEventListener('change', () => {
+    state.filters.project = elProject.value;
+    fetchPosts(true);
+  });
+  elBrand.addEventListener('change', () => {
+    state.filters.brand = elBrand.value;
+    fetchPosts(true);
+  });
+  elPlatform.addEventListener('change', () => {
+    state.filters.platform = elPlatform.value;
+    fetchPosts(true);
+  });
+  elStatus.addEventListener('change', () => {
+    state.filters.status = elStatus.value;
+    fetchPosts(true);
+  });
+
+  let searchTimer;
+  elSearch.addEventListener('input', (e) => {
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(() => {
+      state.filters.q = e.target.value.trim();
+      fetchPosts(true);
+    }, 250);
+  });
+
+  // ==============================
+  //  INIT
+  // ==============================
+  fetchPosts(true);
   </script>
 </body>
 </html>
