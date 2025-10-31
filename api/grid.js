@@ -1,302 +1,395 @@
-// /api/grid.js
-// Widget Irregular — versión estable con Hide y Archivado separados
-// Requiere:
-//  - NOTION_TOKEN
-//  - NOTION_DATABASE_ID   (o NOTION_DB_CONTENT como fallback)
+import { Client } from "@notionhq/client";
+
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
+
+const DB_ID =
+  process.env.NOTION_DB_ID ||
+  process.env.NOTION_DATABASE_ID ||
+  process.env.NOTION_DB_CONTENT;
+
+// nombres reales que tienes en Notion ahora mismo
+const ROLL_OR_REL_CLIENT = "PostClient";
+const ROLL_OR_REL_BRAND = "PostBrands";
+const ROLL_OR_REL_PROJECT = "PostProject"; // este lo vi como relation
+
+// nombres “bonitos” por si mañana los creas
+const ALT_ROLL_CLIENT = "ClientName";
+const ALT_ROLL_BRAND = "BrandName";
+const ALT_ROLL_PROJECT = "ProjectName";
+
+const NAME_KEY = "Name";
+const DATE_KEY = "Publish Date";
+const STATUS_KEY = "Status";
+const PLATFORM_KEY = "Platform";
+const OWNER_KEY = "Owner";
+const HIDE_KEY = "Hide";
+const ARCHIVE_KEY = "Archivado";
+const PINNED_KEY = "Pinned";
+const ATTACH_KEY = "Attachment";
+const LINK_KEY = "Link";
+const CANVA_KEY = "Canva";
+const COPY_KEY = "Copy";
+
+const PUBLISHED_STATUSES = [
+  "Publicado",
+  "Entregado",
+  "Scheduled",
+  "Aprobado",
+];
 
 export default async function handler(req, res) {
-  // 1. ENV
-  const notionToken =
-    process.env.NOTION_TOKEN ||
-    process.env.NOTION_SECRET || // por si acaso
-    null;
+  try {
+    if (!process.env.NOTION_TOKEN || !DB_ID) {
+      return res
+        .status(500)
+        .json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DB_ID" });
+    }
 
-  const dbId =
-    process.env.NOTION_DATABASE_ID ||
-    process.env.NOTION_DB_CONTENT ||
-    process.env.NOTION_DB_ID ||
-    null;
+    const {
+      limit = 24,
+      start_cursor,
+      status = "all",
+      platform,
+      q,
+      client,
+      project,
+      brand,
+    } = req.query;
 
-  if (!notionToken || !dbId) {
-    return res.status(200).json({
+    const filter = buildFilter({
+      status,
+      platform,
+      q,
+      client,
+      project,
+      brand,
+    });
+
+    const resp = await notion.databases.query({
+      database_id: DB_ID,
+      filter,
+      sorts: [
+        { property: PINNED_KEY, direction: "descending" },
+        { property: DATE_KEY, direction: "descending" },
+      ],
+      page_size: Number(limit),
+      start_cursor: start_cursor || undefined,
+    });
+
+    const pages = resp.results || [];
+
+    // recolectar ids de relations por si alguno sí es relation
+    const clientIds = new Set();
+    const brandIds = new Set();
+    const projectIds = new Set();
+
+    const processed = pages
+      .map((page) => {
+        const props = page.properties || {};
+
+        // ya vienen filtrados por hide/archive en el filter,
+        // pero lo vuelvo a chequear por si acaso
+        if (props[HIDE_KEY]?.checkbox) return null;
+        if (props[ARCHIVE_KEY]?.checkbox) return null;
+
+        // recolectar relations (por si PostProject sigue siendo relation)
+        collectRelationIds(props[ROLL_OR_REL_CLIENT], clientIds);
+        collectRelationIds(props[ROLL_OR_REL_BRAND], brandIds);
+        collectRelationIds(props[ROLL_OR_REL_PROJECT], projectIds);
+
+        return { id: page.id, props };
+      })
+      .filter(Boolean);
+
+    // resolver nombres de las relaciones (solo las que sigan siendo relation)
+    const clientNameById = await fetchPageNames(clientIds);
+    const brandNameById = await fetchPageNames(brandIds);
+    const projectNameById = await fetchPageNames(projectIds);
+
+    // convertir a formato frontend
+    const finalPosts = processed.map(({ id, props }) => {
+      const title = getTitle(props);
+      const date = getDate(props);
+      const statusName = getStatus(props);
+      const platforms = getPlatforms(props);
+      const owner = getOwner(props);
+      const pinned = props[PINNED_KEY]?.checkbox === true;
+      const copy = getCopy(props);
+      const assets = extractAssets(props);
+
+      // 🔴 AQUÍ viene la parte que te dolía:
+      // primero intento leer el ROLLUP con TU NOMBRE (PostClient),
+      // si no, el alterno (ClientName),
+      // si no, la relation.
+      const clientName =
+        getRollupText(props[ROLL_OR_REL_CLIENT]) ||
+        getRollupText(props[ALT_ROLL_CLIENT]) ||
+        getNameFromRelation(props[ROLL_OR_REL_CLIENT], clientNameById);
+
+      const brandName =
+        getRollupText(props[ROLL_OR_REL_BRAND]) ||
+        getRollupText(props[ALT_ROLL_BRAND]) ||
+        getNameFromRelation(props[ROLL_OR_REL_BRAND], brandNameById);
+
+      const projectName =
+        getRollupText(props[ROLL_OR_REL_PROJECT]) ||
+        getRollupText(props[ALT_ROLL_PROJECT]) ||
+        getNameFromRelation(props[ROLL_OR_REL_PROJECT], projectNameById);
+
+      return {
+        id,
+        title,
+        date,
+        status: statusName,
+        type: props.Type?.select?.name || null,
+        platforms,
+        client: clientName,
+        project: projectName,
+        brand: brandName,
+        owner,
+        pinned,
+        archived: false,
+        hidden: false,
+        copy,
+        assets,
+      };
+    });
+
+    const filters = buildFiltersFromPosts(finalPosts);
+
+    res.status(200).json({
+      ok: true,
+      posts: finalPosts,
+      filters,
+      has_more: resp.has_more,
+      next_cursor: resp.next_cursor || null,
+    });
+  } catch (err) {
+    console.error("GRID ERROR", err);
+    res.status(500).json({
       ok: false,
-      error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID",
+      error: err.message,
       posts: [],
-      filters: { clients: [], projects: [], brands: [], platforms: [], owners: [] },
+      filters: {
+        clients: [],
+        projects: [],
+        brands: [],
+        platforms: [],
+        owners: [],
+      },
+    });
+  }
+}
+
+function buildFilter({ status, platform, q, client, project, brand }) {
+  const and = [];
+
+  // excluir hide
+  and.push({
+    or: [
+      { property: HIDE_KEY, checkbox: { equals: false } },
+      { property: HIDE_KEY, checkbox: { is_empty: true } },
+    ],
+  });
+
+  // excluir archivado
+  and.push({
+    or: [
+      { property: ARCHIVE_KEY, checkbox: { equals: false } },
+      { property: ARCHIVE_KEY, checkbox: { is_empty: true } },
+    ],
+  });
+
+  if (status !== "all") {
+    and.push({
+      or: PUBLISHED_STATUSES.map((s) => ({
+        property: STATUS_KEY,
+        status: { equals: s },
+      })),
     });
   }
 
-  // 2. Leer query params
-  const {
-    limit = "12",
-    cursor,
-    status,
-    client,
-    project,
-    brand,
-    platform,
-    owner,
-    includeArchived,
-    meta,
-  } = req.query;
-
-  // 3. Armar filtro base
-  // SIEMPRE: ocultar los que están en Hide = true
-  // SOLO si NO nos piden includeArchived: también ocultar Archivado = true
-  const andFilter = [
-    {
-      property: "Hide",
-      checkbox: { equals: false },
-    },
-  ];
-
-  if (!includeArchived) {
-    andFilter.push({
-      property: "Archivado",
-      checkbox: { equals: false },
-    });
-  }
-
-  // 3.1 Filtros opcionales (solo si vienen en la URL)
-  // Todos estos son best-effort porque depende de cómo se llamen EXACTO en tu DB
-  if (status && status !== "all") {
-    andFilter.push({
-      property: "Status",
-      status: { equals: status },
-    });
-  }
-
-  if (client) {
-    // aquí asumimos que ya tienes el rollup ClientName
-    andFilter.push({
-      property: "ClientName",
-      rich_text: { equals: client },
-    });
-  }
-
-  if (project) {
-    andFilter.push({
-      property: "ProjectName",
-      rich_text: { equals: project },
-    });
-  }
-
-  if (brand) {
-    andFilter.push({
-      property: "BrandName",
-      rich_text: { equals: brand },
-    });
-  }
-
-  if (platform) {
-    // Platform es multi-select → contains
-    andFilter.push({
-      property: "Platform",
+  if (platform && platform !== "all") {
+    and.push({
+      property: PLATFORM_KEY,
       multi_select: { contains: platform },
     });
   }
 
-  if (owner) {
-    andFilter.push({
-      property: "Owner",
-      people: { contains: owner },
-    });
+  // (opcional) si luego quieres filtrar por client desde la UI
+  if (client && client !== "all") {
+    // como tus client vienen como rollup/str, es más fácil filtrar en frontend
   }
 
-  // 4. Construir body para Notion
-  const body = {
-    filter: {
-      and: andFilter,
-    },
-    sorts: [
-      // primero pineados
-      {
-        property: "Pinned",
-        direction: "descending",
-      },
-      // luego por Publish Date desc
-      {
-        property: "Publish Date",
-        direction: "descending",
-      },
-    ],
-    page_size: parseInt(limit, 10),
-  };
-
-  if (cursor) {
-    body.start_cursor = cursor;
-  }
-
-  try {
-    // 5. Llamar a Notion
-    const r = await fetch("https://api.notion.com/v1/databases/" + dbId + "/query", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${notionToken}`,
-        "Notion-Version": "2022-06-28",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const json = await r.json();
-
-    if (!r.ok) {
-      // aquí estaba saliendo tu error de "body failed validation..."
-      return res.status(200).json({
-        ok: false,
-        error: json?.message || "Notion query failed",
-        detail: json,
-        posts: [],
-        filters: { clients: [], projects: [], brands: [], platforms: [], owners: [] },
-      });
-    }
-
-    // 6. Procesar resultados → convertir Notion → formato widget
-    const results = Array.isArray(json.results) ? json.results : [];
-    const posts = results.map(mapNotionPageToWidget);
-
-    // 7. Si nos pidieron meta=1 devolvemos contadores básicos (del lote actual)
-    const filters = meta ? buildFiltersFromPosts(posts) : { clients: [], projects: [], brands: [], platforms: [], owners: [] };
-
-    return res.status(200).json({
-      ok: true,
-      posts,
-      filters,
-      has_more: json.has_more,
-      next_cursor: json.next_cursor || null,
-    });
-  } catch (err) {
-    return res.status(200).json({
-      ok: false,
-      error: err.message,
-      posts: [],
-      filters: { clients: [], projects: [], brands: [], platforms: [], owners: [] },
-    });
-  }
+  if (and.length === 1) return and[0];
+  return { and };
 }
 
-/* ============================================================
-    HELPERS
-   ============================================================ */
+function getTitle(props) {
+  const t = props[NAME_KEY]?.title || [];
+  return t.map((p) => p.plain_text).join("") || "Untitled";
+}
 
-function mapNotionPageToWidget(page) {
-  const props = page.properties || {};
+function getDate(props) {
+  return props[DATE_KEY]?.date?.start || null;
+}
 
-  // helpers para no repetir
-  const getTitle = (p) =>
-    (p?.title || []).map((t) => t.plain_text).join("") || "";
+function getStatus(props) {
+  return props[STATUS_KEY]?.status?.name || null;
+}
 
-  const getRichText = (p) =>
-    (p?.rich_text || []).map((t) => t.plain_text).join("") || "";
+function getPlatforms(props) {
+  return (
+    props[PLATFORM_KEY]?.multi_select?.map((p) => p.name).filter(Boolean) || []
+  );
+}
 
-  const getSelect = (p) => p?.select?.name || null;
+function getOwner(props) {
+  const people = props[OWNER_KEY]?.people || [];
+  if (people.length) return people[0].name || null;
+  return null;
+}
 
-  const getMultiSelect = (p) => (p?.multi_select || []).map((t) => t.name);
+function getCopy(props) {
+  const rt = props[COPY_KEY]?.rich_text || [];
+  return rt.map((t) => t.plain_text).join("") || "";
+}
 
-  const getDate = (p) => p?.date?.start || null;
-
-  // Rollups (ClientName, ProjectName, BrandName) pueden venir de varias formas,
-  // hacemos el mismo patrón: texto plano
-  const getRollupText = (p) => {
-    if (!p) return null;
-    // a veces viene como array de rich_text
-    if (Array.isArray(p?.rollup?.array) && p.rollup.array.length > 0) {
-      // agarrar el primero
-      const first = p.rollup.array[0];
-      if (first?.title) {
-        return first.title.map((t) => t.plain_text).join("");
-      }
-      if (first?.rich_text) {
-        return first.rich_text.map((t) => t.plain_text).join("");
-      }
-    }
-    // a veces Notion ya lo entrega como plain_text en rich_text
-    if (p?.rich_text) {
-      return p.rich_text.map((t) => t.plain_text).join("");
-    }
-    return null;
-  };
-
-  // Assets: preferimos Attachment, pero tú a veces metes Link o Canva
+function extractAssets(props) {
   const assets = [];
 
-  // 1) Attachment (files & media)
-  if (props.Attachment && Array.isArray(props.Attachment.files)) {
-    props.Attachment.files.forEach((f) => {
-      if (f.external?.url) {
-        assets.push({ url: f.external.url, type: guessAssetType(f.external.url), source: "attachment" });
-      } else if (f.file?.url) {
-        assets.push({ url: f.file.url, type: guessAssetType(f.file.url), source: "attachment" });
-      }
-    });
+  const files = props[ATTACH_KEY]?.files || [];
+  files.forEach((f) => {
+    const url = f.file?.url || f.external?.url;
+    if (url) {
+      assets.push({ url, type: guessType(url), source: "attachment" });
+    }
+  });
+
+  const linkUrl = props[LINK_KEY]?.url;
+  if (linkUrl) {
+    assets.push({ url: linkUrl, type: guessType(linkUrl), source: "link" });
   }
 
-  // 2) Link
-  if (props.Link && props.Link.url) {
-    assets.push({ url: props.Link.url, type: guessAssetType(props.Link.url), source: "link" });
+  const canvaUrl = props[CANVA_KEY]?.url;
+  if (canvaUrl) {
+    assets.push({ url: canvaUrl, type: "image", source: "canva" });
   }
 
-  // 3) Canva
-  if (props.Canva && props.Canva.url) {
-    assets.push({ url: props.Canva.url, type: guessAssetType(props.Canva.url), source: "canva" });
+  if (!assets.length) {
+    assets.push({ url: null, type: "none", source: "none" });
   }
 
-  // Copy
-  const copy = getRichText(props.Copy);
-
-  return {
-    id: page.id,
-    title: getTitle(props.Post || props.Name || props.Title || props["Name/Post"]),
-    date: getDate(props["Publish Date"] || props.Date),
-    status: getSelect(props.Status),
-    type: getSelect(props.Type),
-    platforms: getMultiSelect(props.Platform),
-    client: getRollupText(props.ClientName),
-    project: getRollupText(props.ProjectName),
-    brand: getRollupText(props.BrandName),
-    owner: (props.Owner && props.Owner.people && props.Owner.people[0]?.name) || null,
-    pinned: props.Pinned?.checkbox === true,
-    archived: props.Archivado?.checkbox === true,
-    hidden: props.Hide?.checkbox === true,
-    copy,
-    assets,
-  };
+  return assets;
 }
 
-function guessAssetType(url) {
+function guessType(url) {
   if (!url) return "image";
-  const lower = url.toLowerCase();
-  if (lower.includes(".mp4") || lower.includes("video")) return "video";
+  const l = url.toLowerCase();
+  if (l.endsWith(".mp4") || l.includes("video")) return "video";
   return "image";
 }
 
+// lee rollup genérico (valido para PostClient cuando es rollup)
+function getRollupText(prop) {
+  if (!prop) return null;
+  if (prop.type !== "rollup") return null;
+
+  // casos típicos de rollup
+  if (prop.rollup?.array?.length) {
+    const first = prop.rollup.array[0];
+    if (first?.title?.length) {
+      return first.title.map((t) => t.plain_text).join("");
+    }
+    if (first?.rich_text?.length) {
+      return first.rich_text.map((t) => t.plain_text).join("");
+    }
+  }
+
+  if (prop.rollup?.rich_text?.length) {
+    return prop.rollup.rich_text.map((t) => t.plain_text).join("");
+  }
+
+  if (typeof prop.rollup?.number === "number") {
+    return String(prop.rollup.number);
+  }
+
+  return null;
+}
+
+// si la prop es relation (como PostProject) buscamos en el map
+function getNameFromRelation(prop, map) {
+  if (!prop) return null;
+  if (prop.type === "relation" && Array.isArray(prop.relation)) {
+    const firstId = prop.relation[0]?.id;
+    if (firstId && map[firstId]) return map[firstId];
+    if (firstId) return firstId; // fallback
+  }
+  return null;
+}
+
+// recolecta ids de relations para luego resolver nombre
+function collectRelationIds(prop, set) {
+  if (!prop) return;
+  if (prop.type === "relation" && Array.isArray(prop.relation)) {
+    prop.relation.forEach((r) => set.add(r.id));
+  }
+}
+
+// trae nombres de páginas relacionadas (cuando sí es relation)
+async function fetchPageNames(idSet) {
+  const map = {};
+  const ids = Array.from(idSet);
+  for (const id of ids) {
+    try {
+      const page = await notion.pages.retrieve({ page_id: id });
+      const titleProp = page.properties?.Name?.title || [];
+      const name = titleProp.map((t) => t.plain_text).join("");
+      map[id] = name || id;
+    } catch (e) {
+      map[id] = id;
+    }
+  }
+  return map;
+}
+
+// build filters from posts
 function buildFiltersFromPosts(posts) {
-  const countBy = (key) => {
-    const map = new Map();
-    posts.forEach((p) => {
-      const val = p[key];
-      if (!val) return;
-      // algunos campos son array (platforms)
-      if (Array.isArray(val)) {
-        val.forEach((v) => {
-          map.set(v, (map.get(v) || 0) + 1);
-        });
-      } else {
-        map.set(val, (map.get(val) || 0) + 1);
-      }
-    });
-    // ordenar desc por count
-    const arr = Array.from(map.entries()).map(([name, count]) => ({ name, count }));
-    arr.sort((a, b) => b.count - a.count);
-    return arr;
-  };
+  const clientCounts = {};
+  const projectCounts = {};
+  const brandCounts = {};
+  const platforms = new Set();
+  const owners = {};
+
+  posts.forEach((p) => {
+    if (p.client) {
+      clientCounts[p.client] = (clientCounts[p.client] || 0) + 1;
+    }
+    if (p.project) {
+      projectCounts[p.project] = (projectCounts[p.project] || 0) + 1;
+    }
+    if (p.brand) {
+      brandCounts[p.brand] = (brandCounts[p.brand] || 0) + 1;
+    }
+    (p.platforms || []).forEach((pl) => platforms.add(pl));
+    if (p.owner) {
+      owners[p.owner] = (owners[p.owner] || 0) + 1;
+    }
+  });
 
   return {
-    clients: countBy("client"),
-    projects: countBy("project"),
-    brands: countBy("brand"),
-    platforms: countBy("platforms"),
-    owners: countBy("owner"),
+    clients: Object.entries(clientCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
+    projects: Object.entries(projectCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
+    brands: Object.entries(brandCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
+    platforms: Array.from(platforms),
+    owners: Object.entries(owners)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
   };
 }
