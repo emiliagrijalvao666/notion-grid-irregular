@@ -1,176 +1,142 @@
 // /api/grid.js
+
 import { Client } from "@notionhq/client";
 
+// IMPORTANTE: respeta estos nombres porque es como tú los pusiste en Vercel
 const NOTION_TOKEN = process.env.NOTION_TOKEN;
-// ← AQUÍ el multi-fallback
 const NOTION_DB_ID =
-  process.env.NOTION_DATABASE_ID ||
   process.env.NOTION_DB_ID ||
+  process.env.NOTION_DATABASE_ID ||
   process.env.NOTION_DB_CONTENT;
+
+// cachecito en memoria (se borra cuando Vercel duerme, pero sirve)
+let FILTER_CACHE = null;
+let FILTER_CACHE_TS = 0; // timestamp en ms
+const FILTER_CACHE_TTL = 5 * 60 * 1000; // 5 minutos
 
 const notion = new Client({ auth: NOTION_TOKEN });
 
-export default async function handler(req, res) {
-  // 1. validación súper clara
-  if (!NOTION_TOKEN || !NOTION_DB_ID) {
-    return res.status(500).json({
-      ok: false,
-      error: "Missing NOTION_TOKEN or NOTION_DB_ID",
-      debug: {
-        hasToken: !!NOTION_TOKEN,
-        hasDb: !!NOTION_DB_ID,
-        envSeen: Object.keys(process.env).filter((k) =>
-          k.startsWith("NOTION")
-        ),
-      },
-    });
+// helper seguro para leer texto
+function getText(prop) {
+  if (!prop) return "";
+  if (Array.isArray(prop)) {
+    return prop.map((t) => t.plain_text).join("");
   }
-
-  const {
-    client,
-    project,
-    brand,
-    platform,
-    status,
-    q,
-    limit = 12,
-    cursor,
-    meta,
-  } = req.query;
-
-  try {
-    // armamos el filtro base
-    const filters = [
-      {
-        property: "Hide",
-        checkbox: { equals: false },
-      },
-      {
-        property: "Archivado",
-        checkbox: { equals: false },
-      },
-    ];
-
-    // status logic
-    if (status && status !== "all" && status !== "All Status") {
-      // published only
-      filters.push({
-        property: "Status",
-        status: {
-          contains: "",
-        },
-      });
-      // tu lógica de published-only la puedes afinar aquí
-    }
-
-    if (client && client !== "all") {
-      filters.push({
-        property: "ClientName",
-        rich_text: { equals: client },
-      });
-    }
-
-    if (project && project !== "all") {
-      filters.push({
-        property: "ProjectName",
-        rich_text: { equals: project },
-      });
-    }
-
-    if (brand && brand !== "all") {
-      filters.push({
-        property: "BrandName",
-        rich_text: { equals: brand },
-      });
-    }
-
-    if (platform && platform !== "all") {
-      filters.push({
-        property: "Platform",
-        multi_select: { contains: platform },
-      });
-    }
-
-    if (q) {
-      filters.push({
-        property: "Post",
-        title: { contains: q },
-      });
-    }
-
-    const query = {
-      database_id: NOTION_DB_ID,
-      filter: { and: filters },
-      sorts: [
-        {
-          property: "Publish Date",
-          direction: "descending",
-        },
-      ],
-      page_size: Number(limit) || 12,
-    };
-
-    if (cursor) {
-      query.start_cursor = cursor;
-    }
-
-    const response = await notion.databases.query(query);
-
-    const posts = response.results.map((page) => mapPost(page));
-
-    // si solo quieren meta
-    if (meta === "1") {
-      return res.status(200).json({
-        ok: true,
-        filters: buildFilters(posts),
-      });
-    }
-
-    return res.status(200).json({
-      ok: true,
-      posts,
-      has_more: response.has_more,
-      next_cursor: response.next_cursor || null,
-    });
-  } catch (err) {
-    console.error("NOTION ERROR", err.body || err);
-    return res.status(500).json({
-      ok: false,
-      error: "Notion query failed",
-      detail: err.body || err.message,
-    });
+  if (prop.rich_text) {
+    return prop.rich_text.map((t) => t.plain_text).join("");
   }
+  if (prop.title) {
+    return prop.title.map((t) => t.plain_text).join("");
+  }
+  return "";
 }
 
-function mapPost(page) {
-  const props = page.properties || {};
+// extraer assets (attachments / links / canva)
+function extractAssets(properties) {
+  const assets = [];
+
+  // 1. Files & media
+  if (properties.Attachment && properties.Attachment.files) {
+    properties.Attachment.files.forEach((file) => {
+      if (file.external) {
+        assets.push({
+          url: file.external.url,
+          type: "image",
+          source: "attachment",
+        });
+      } else if (file.file) {
+        assets.push({
+          url: file.file.url,
+          type: "image",
+          source: "attachment",
+        });
+      }
+    });
+  }
+
+  // 2. Link (drive, etc.)
+  if (properties.Link && properties.Link.url) {
+    assets.push({
+      url: properties.Link.url,
+      type: "image",
+      source: "link",
+    });
+  }
+
+  // 3. Canva
+  if (properties.Canva && properties.Canva.url) {
+    assets.push({
+      url: properties.Canva.url,
+      type: "image",
+      source: "canva",
+    });
+  }
+
+  return assets;
+}
+
+// procesar 1 post de Notion → objeto plano para el front
+function processPost(page) {
+  const props = page.properties;
+
+  // nombres de propiedades que tú usas en tu DB
+  const nameKey = "Post";
+  const dateKey = "Publish Date";
+  const statusKey = "Status";
+  const clientRollKey = "ClientName";
+  const projectRollKey = "ProjectName";
+  const brandRollKey = "BrandName";
+  const platformKey = "Platform";
+  const copyKey = "Copy";
+  const ownerKey = "Owner";
+  const pinnedKey = "Pinned";
+  const archivedKey = "Archivado";
+  const hiddenKey = "Hide";
+
+  // name
   const title =
-    (props.Post?.title || props.Name?.title || [])
-      .map((t) => t.plain_text)
-      .join("") || "Untitled";
+    getText(props[nameKey]?.title) ||
+    getText(props["Name"]?.title) ||
+    getText(props["Post"]?.title) ||
+    "Untitled";
 
+  // date
   const date =
-    props["Publish Date"]?.date?.start || props["Fecha"]?.date?.start || null;
+    props[dateKey]?.date?.start ||
+    props["Date"]?.date?.start ||
+    props["Fecha"]?.date?.start ||
+    null;
 
-  const status = props.Status?.status?.name || null;
+  // status
+  const status =
+    props[statusKey]?.status?.name ||
+    props["Estado"]?.status?.name ||
+    props["Status"]?.select?.name ||
+    null;
 
-  const client =
-    props.ClientName?.rich_text?.map((t) => t.plain_text).join("") || null;
+  // rollups legibles
+  const client = getText(props[clientRollKey]);
+  const project = getText(props[projectRollKey]);
+  const brand = getText(props[brandRollKey]);
 
-  const project =
-    props.ProjectName?.rich_text?.map((t) => t.plain_text).join("") || null;
+  // platforms
+  const platforms = props[platformKey]?.multi_select
+    ? props[platformKey].multi_select.map((p) => p.name)
+    : [];
 
-  const brand =
-    props.BrandName?.rich_text?.map((t) => t.plain_text).join("") || null;
+  // copy
+  const copy = getText(props[copyKey]);
 
-  const owner = props.Owner?.people?.[0]?.name || null;
+  // owner
+  const owner =
+    props[ownerKey]?.people?.[0]?.name ||
+    props[ownerKey]?.rich_text?.[0]?.plain_text ||
+    null;
 
-  const copy = (props.Copy?.rich_text || [])
-    .map((t) => t.plain_text)
-    .join("");
-
-  const platforms =
-    props.Platform?.multi_select?.map((p) => p.name) || [];
+  // flags
+  const pinned = props[pinnedKey]?.checkbox === true;
+  const archived = props[archivedKey]?.checkbox === true;
+  const hidden = props[hiddenKey]?.checkbox === true;
 
   const assets = extractAssets(props);
 
@@ -179,102 +145,239 @@ function mapPost(page) {
     title,
     date,
     status,
-    client,
-    project,
-    brand,
-    owner,
+    type: props.Type?.select?.name || null,
     platforms,
+    client: client || null,
+    project: project || null,
+    brand: brand || null,
+    owner,
+    pinned,
+    archived,
+    hidden,
     copy,
-    pinned: props.Pinned?.checkbox || false,
-    archived: props.Archivado?.checkbox || false,
-    hidden: props.Hide?.checkbox || false,
     assets,
   };
 }
 
-function extractAssets(props) {
-  // soportar Attachment, Link, Canva
-  const out = [];
+// ← NUEVO: función que cuenta ocurrencias
+function buildCounts(posts) {
+  const clients = {};
+  const projects = {};
+  const brands = {};
+  const owners = {};
 
-  const att = props.Attachment?.files || props.Attachments?.files;
-  if (att && att.length) {
-    att.forEach((f) => {
-      out.push({
-        url: f.external?.url || f.file?.url,
-        type: "image",
-        source: "attachment",
-      });
-    });
-  }
+  posts.forEach((post) => {
+    // excluimos los que no se muestran
+    if (post.archived || post.hidden) return;
 
-  const link = props.Link?.url;
-  if (link) {
-    out.push({
-      url: link,
-      type: "image",
-      source: "link",
-    });
-  }
-
-  const canva = props.Canva?.url;
-  if (canva) {
-    out.push({
-      url: canva,
-      type: "image",
-      source: "canva",
-    });
-  }
-
-  return out;
-}
-
-function buildFilters(posts) {
-  const clients = new Set();
-  const projects = new Set();
-  const brands = new Set();
-  const owners = new Map();
-
-  posts.forEach((p) => {
-    if (p.client) clients.add(p.client);
-    if (p.project) projects.add(p.project);
-    if (p.brand) brands.add(p.brand);
-    if (p.owner) {
-      const prev = owners.get(p.owner) || 0;
-      owners.set(p.owner, prev + 1);
+    if (post.client) {
+      clients[post.client] = (clients[post.client] || 0) + 1;
+    }
+    if (post.project) {
+      projects[post.project] = (projects[post.project] || 0) + 1;
+    }
+    if (post.brand) {
+      brands[post.brand] = (brands[post.brand] || 0) + 1;
+    }
+    if (post.owner) {
+      owners[post.owner] = (owners[post.owner] || 0) + 1;
     }
   });
 
+  // pasamos a arrays ordenados
+  const toArr = (obj) =>
+    Object.entries(obj)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
+
   return {
-    clients: Array.from(clients),
-    projects: Array.from(projects),
-    brands: Array.from(brands),
-    platforms: [
-      "Instagram",
-      "Tiktok",
-      "Youtube",
-      "Facebook",
-      "Página web",
-      "Pantalla",
-    ],
-    owners: Array.from(owners.entries()).map(([name, count], i) => ({
-      name,
-      count,
-      color: ownerColor(i),
-      initials: name.slice(0, 2).toUpperCase(),
-    })),
+    clients: toArr(clients),
+    projects: toArr(projects),
+    brands: toArr(brands),
+    owners: toArr(owners),
   };
 }
 
-function ownerColor(i) {
-  const COLORS = [
-    "#10B981",
-    "#8B5CF6",
-    "#EC4899",
-    "#F59E0B",
-    "#3B82F6",
-    "#EF4444",
-    "#FCD34D",
-    "#14B8A6",
-  ];
-  return COLORS[i % COLORS.length];
+export default async function handler(req, res) {
+  // 1. validar env
+  if (!NOTION_TOKEN || !NOTION_DB_ID) {
+    return res.status(200).json({
+      ok: false,
+      error: "Missing NOTION_TOKEN or NOTION_DB_ID",
+      posts: [],
+      filters: {
+        clients: [],
+        projects: [],
+        brands: [],
+        platforms: [],
+        owners: [],
+      },
+    });
+  }
+
+  const {
+    limit = 24,
+    start_cursor = null,
+    client,
+    project,
+    brand,
+    platform,
+    status,
+    meta,
+  } = req.query;
+
+  try {
+    // 2. construir filtros base
+    const andFilters = [];
+
+    // excluir archivados / ocultos SIEMPRE
+    andFilters.push({
+      or: [
+        {
+          property: "Archivado",
+          checkbox: { equals: false },
+        },
+        {
+          property: "Archivado",
+          checkbox: { is_empty: true },
+        },
+      ],
+    });
+
+    andFilters.push({
+      or: [
+        {
+          property: "Hide",
+          checkbox: { equals: false },
+        },
+        {
+          property: "Hide",
+          checkbox: { is_empty: true },
+        },
+      ],
+    });
+
+    // filtros opcionales
+    if (client && client !== "all") {
+      andFilters.push({
+        property: "ClientName",
+        rich_text: { equals: client },
+      });
+    }
+
+    if (project && project !== "all") {
+      andFilters.push({
+        property: "ProjectName",
+        rich_text: { equals: project },
+      });
+    }
+
+    if (brand && brand !== "all") {
+      andFilters.push({
+        property: "BrandName",
+        rich_text: { equals: brand },
+      });
+    }
+
+    if (platform && platform !== "all") {
+      andFilters.push({
+        property: "Platform",
+        multi_select: { contains: platform },
+      });
+    }
+
+    // STATUS:
+    // Published Only → mostramos “Publicado”, “Aprobado”, “Entregado”, “Scheduled”
+    // All Status → no filtramos
+    if (status && status !== "all" && status !== "All Status") {
+      andFilters.push({
+        property: "Status",
+        status: {
+          equals: status,
+        },
+      });
+    }
+
+    // 3. query a Notion
+    const queryPayload = {
+      database_id: NOTION_DB_ID,
+      page_size: Number(limit),
+      sorts: [
+        {
+          property: "Publish Date",
+          direction: "descending",
+        },
+      ],
+    };
+
+    if (andFilters.length > 0) {
+      queryPayload.filter = { and: andFilters };
+    }
+
+    if (start_cursor) {
+      queryPayload.start_cursor = start_cursor;
+    }
+
+    const notionRes = await notion.databases.query(queryPayload);
+
+    // 4. procesar posts
+    const posts = notionRes.results.map(processPost);
+
+    // 5. construir platforms únicos (esto ya lo tenías)
+    const platformsSet = new Set();
+    posts.forEach((p) => {
+      (p.platforms || []).forEach((pl) => platformsSet.add(pl));
+    });
+
+    // 6. CONTADORES (con cache)
+    let counts = null;
+    const now = Date.now();
+    const cacheIsValid =
+      FILTER_CACHE && now - FILTER_CACHE_TS < FILTER_CACHE_TTL;
+
+    if (cacheIsValid) {
+      counts = FILTER_CACHE;
+    } else {
+      // OJO: aquí estamos contando SOLO sobre los posts de ESTA query.
+      // Para una cuenta de tooooda la DB necesitaríamos paginar,
+      // pero eso lo dejamos para la versión 2.
+      counts = buildCounts(posts);
+      FILTER_CACHE = counts;
+      FILTER_CACHE_TS = now;
+    }
+
+    // 7. respuesta
+    return res.status(200).json({
+      ok: true,
+      posts,
+      filters: {
+        clients: counts.clients,
+        projects: counts.projects,
+        brands: counts.brands,
+        platforms: Array.from(platformsSet),
+        owners: counts.owners,
+      },
+      has_more: notionRes.has_more,
+      next_cursor: notionRes.next_cursor || null,
+      // esto es útil para depurar
+      debug: {
+        db: NOTION_DB_ID,
+        filters_applied: andFilters,
+      },
+    });
+  } catch (err) {
+    console.error("Error in /api/grid:", err);
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+      posts: [],
+      filters: {
+        clients: [],
+        projects: [],
+        brands: [],
+        platforms: [],
+        owners: [],
+      },
+    });
+  }
 }
