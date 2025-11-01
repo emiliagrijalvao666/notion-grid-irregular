@@ -1,15 +1,12 @@
 // /api/grid.js
+import { Client } from "@notionhq/client";
 
-const { Client } = require("@notionhq/client");
-
-module.exports = async (req, res) => {
-  // 1. leer envs (acepta los 2 nombres tuyos)
-  const NOTION_TOKEN =
-    process.env.NOTION_TOKEN || process.env.NEXT_PUBLIC_NOTION_TOKEN;
+export default async function handler(req, res) {
+  // 1. leer envs EXACTOS que tienes en Vercel
+  const NOTION_TOKEN = process.env.NOTION_TOKEN;
   const NOTION_DB_ID =
     process.env.NOTION_DB_ID ||
-    process.env.NOTION_DATABASE_ID || // tú lo tenías así
-    process.env.NOTION_DB ||
+    process.env.NOTION_DATABASE_ID || // así lo tienes en el screenshot
     null;
 
   if (!NOTION_TOKEN || !NOTION_DB_ID) {
@@ -21,8 +18,7 @@ module.exports = async (req, res) => {
 
   const notion = new Client({ auth: NOTION_TOKEN });
 
-  // 2. leer filtros que manda el frontend
-  // si no manda nada, ponemos "all"
+  // 2. leer body (tus filtros)
   let body = {};
   if (req.method === "POST") {
     try {
@@ -40,28 +36,25 @@ module.exports = async (req, res) => {
     status = "all",
   } = body || {};
 
-  // 3. filtros base (estos son los que te estaban rompiendo)
-  // NO usamos or. Todo definido.
+  // 3. Filtros base (estos rompían antes)
   const filters = [
-    // no mostrar archivados
     {
-      property: "Archivado",
+      property: "Archivado", // checkbox
       checkbox: {
         does_not_equal: true,
       },
     },
-    // no mostrar ocultos
     {
-      property: "Hide",
+      property: "Hide", // checkbox
       checkbox: {
         does_not_equal: true,
       },
     },
   ];
 
-  // 4. filtros dinámicos
-  // CLIENT (tu columna es Relation → Clients)
-  if (client && client !== "all") {
+  // 4. Filtros dinámicos según tus columnas reales
+  // Client → Relation con DB Clients
+  if (client !== "all") {
     filters.push({
       property: "Client",
       relation: {
@@ -70,8 +63,8 @@ module.exports = async (req, res) => {
     });
   }
 
-  // PROJECT (tu columna es Relation → Projects)
-  if (project && project !== "all") {
+  // Project → Relation con DB Projects
+  if (project !== "all") {
     filters.push({
       property: "Project",
       relation: {
@@ -80,8 +73,8 @@ module.exports = async (req, res) => {
     });
   }
 
-  // PLATFORM (multi-select)
-  if (platform && platform !== "all") {
+  // Platform → multi-select
+  if (platform !== "all") {
     filters.push({
       property: "Platform",
       multi_select: {
@@ -90,8 +83,8 @@ module.exports = async (req, res) => {
     });
   }
 
-  // OWNER (people)
-  if (owner && owner !== "all") {
+  // Owner → people
+  if (owner !== "all") {
     filters.push({
       property: "Owner",
       people: {
@@ -100,10 +93,8 @@ module.exports = async (req, res) => {
     });
   }
 
-  // STATUS (status de tu DB: Idea, Diseño, Editing, Publicado, etc.)
-  // tú dijiste: “ya funciona All Status, no lo muevas” → entonces solo
-  // aplicamos si NO es "all"
-  if (status && status !== "all") {
+  // Status → status
+  if (status !== "all") {
     filters.push({
       property: "Status",
       status: {
@@ -112,24 +103,21 @@ module.exports = async (req, res) => {
     });
   }
 
-  // 5. armar query para Notion
+  // 5. armar query
   const query = {
     database_id: NOTION_DB_ID,
     filter: {
       and: filters,
     },
     sorts: [
-      // primero los pineados
       {
         property: "Pinned",
         direction: "descending",
       },
-      // luego por Publish Date desc
       {
         property: "Publish Date",
         direction: "descending",
       },
-      // y como respaldo, fecha de creación
       {
         timestamp: "created_time",
         direction: "descending",
@@ -139,37 +127,36 @@ module.exports = async (req, res) => {
   };
 
   try {
-    const response = await notion.databases.query(query);
+    const resp = await notion.databases.query(query);
 
-    // 6. mapear a algo más bonito para el frontend
-    const items = (response.results || []).map((page) => {
+    const items = (resp.results || []).map((page) => {
       const props = page.properties || {};
 
       const titleProp = props["Post"] || props["Name"] || {};
       const title =
-        (titleProp.title && titleProp.title[0] && titleProp.title[0].plain_text) ||
+        (titleProp.title &&
+          titleProp.title[0] &&
+          titleProp.title[0].plain_text) ||
         "Untitled";
 
-      const coverFiles = props["Attachment"]?.files || [];
-      const firstImage = coverFiles.length ? coverFiles[0] : null;
+      const files = props["Attachment"]?.files || [];
+      const firstFile = files.length ? files[0] : null;
 
-      // relations devuelven ids → el frontend ya las está usando en el select
       const clientRel = props["Client"]?.relation || [];
       const projectRel = props["Project"]?.relation || [];
-      const platformMS = props["Platform"]?.multi_select || [];
-      const ownerPeople = props["Owner"]?.people || [];
-
+      const platforms = props["Platform"]?.multi_select || [];
+      const owners = props["Owner"]?.people || [];
       const statusProp = props["Status"]?.status || null;
       const publishDate = props["Publish Date"]?.date?.start || null;
 
       return {
         id: page.id,
         title,
-        image: firstImage?.file?.url || firstImage?.external?.url || null,
+        image: firstFile?.file?.url || firstFile?.external?.url || null,
         clientIds: clientRel.map((r) => r.id),
         projectIds: projectRel.map((r) => r.id),
-        platforms: platformMS.map((p) => p.name),
-        owners: ownerPeople.map((p) => p.id),
+        platforms: platforms.map((p) => p.name),
+        owners: owners.map((p) => p.id),
         status: statusProp ? statusProp.name : null,
         publishDate,
       };
@@ -180,10 +167,10 @@ module.exports = async (req, res) => {
       items,
     });
   } catch (err) {
-    console.error("Notion query error", err.body || err);
+    console.error("Notion error:", err.body || err);
     return res.status(500).json({
       ok: false,
       error: err.body || err.message || "Notion query failed",
     });
   }
-};
+}
