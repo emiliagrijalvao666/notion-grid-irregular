@@ -1,302 +1,164 @@
-// pages/api/grid.js
+// /api/grid.js  (Node ESM en Vercel)
 import { Client } from "@notionhq/client";
 
-const notion = new Client({
-  auth: process.env.NOTION_TOKEN,
-});
-
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DB_ID = process.env.NOTION_DB_ID;
 
-// helpers -------------
-// saca el nombre de una FORMULA de texto
-function getFormulaString(prop) {
-  if (!prop) return "";
-  if (prop.type === "formula" && prop.formula && prop.formula.type === "string") {
-    return prop.formula.string || "";
-  }
-  return "";
-}
+// --- helpers de extracción de Notion ---
+const getFormulaText = (prop) =>
+  prop?.type === "formula" && prop.formula?.type === "string"
+    ? (prop.formula.string || "").trim()
+    : "";
 
-// saca nombres de una relation PERO usando la formula como plan A
-function getClientNames(page) {
-  // 1. intenta con formula ClientName
-  const fromFormula = getFormulaString(page.properties?.ClientName);
-  if (fromFormula) {
-    return [fromFormula];
-  }
-  // 2. sino, usa relation Client (ids)
-  const rel = page.properties?.Client;
-  if (rel && rel.type === "relation" && Array.isArray(rel.relation) && rel.relation.length > 0) {
-    // devolvemos ids como texto para que no salga [object Object]
-    return rel.relation.map((r) => `Client ${r.id.slice(0, 6)}`);
-  }
-  return [];
-}
+const getTitle = (p) =>
+  p.properties?.Post?.type === "title"
+    ? (p.properties.Post.title || []).map(t => t.plain_text).join("") || "Untitled"
+    : "Untitled";
 
-function getProjectNames(page) {
-  // 1. intenta con formula ProjectName
-  const fromFormula = getFormulaString(page.properties?.ProjectName);
-  if (fromFormula) {
-    return [fromFormula];
-  }
-  // 2. sino, usa relation Project
-  const rel = page.properties?.Project;
-  if (rel && rel.type === "relation" && Array.isArray(rel.relation) && rel.relation.length > 0) {
-    return rel.relation.map((r) => `Project ${r.id.slice(0, 6)}`);
-  }
-  return [];
-}
+const getDate = (p) =>
+  p.properties?.["Publish Date"]?.type === "date"
+    ? p.properties["Publish Date"].date?.start || null
+    : null;
 
-function getPlatforms(page) {
-  const p = page.properties?.Platform;
-  if (p && p.type === "multi_select" && Array.isArray(p.multi_select)) {
-    return p.multi_select.map((o) => o.name);
-  }
-  return [];
-}
-
-function getOwners(page) {
-  const o = page.properties?.Owner;
-  if (o && o.type === "people" && Array.isArray(o.people)) {
-    return o.people.map((p) => p.name || p.id);
-  }
-  return [];
-}
-
-function getStatus(page) {
-  const s = page.properties?.Status;
-  if (s && s.type === "status" && s.status) {
-    return s.status.name;
-  }
-  return "";
-}
-
-function getTitle(page) {
-  const t = page.properties?.Post;
-  if (t && t.type === "title" && Array.isArray(t.title)) {
-    return t.title.map((p) => p.plain_text).join("") || "Untitled";
-  }
-  return "Untitled";
-}
-
-function getPublishDate(page) {
-  const d = page.properties?.["Publish Date"];
-  if (d && d.type === "date" && d.date && d.date.start) {
-    return d.date.start;
-  }
-  return null;
-}
-
-function getAttachment(page) {
-  const f = page.properties?.Attachment;
-  if (f && f.type === "files" && Array.isArray(f.files) && f.files.length > 0) {
+const getAttachment = (p) => {
+  const f = p.properties?.Attachment;
+  if (f?.type === "files" && Array.isArray(f.files) && f.files.length) {
     const file = f.files[0];
-    if (file.external) return file.external.url;
-    if (file.file) return file.file.url;
+    return file.external?.url || file.file?.url || null;
   }
   return null;
-}
+};
 
-function isHidden(page) {
-  const h = page.properties?.Hide;
-  if (h && h.type === "checkbox") {
-    return h.checkbox === true;
+const getPlatforms = (p) =>
+  p.properties?.Platform?.type === "multi_select"
+    ? (p.properties.Platform.multi_select || []).map(o => o.name)
+    : [];
+
+const getOwners = (p) =>
+  p.properties?.Owner?.type === "people"
+    ? (p.properties.Owner.people || []).map(o => o.name || o.id)
+    : [];
+
+const getStatus = (p) =>
+  p.properties?.Status?.type === "status" ? (p.properties.Status.status?.name || "") : "";
+
+const getCheckbox = (p, name) =>
+  p.properties?.[name]?.type === "checkbox" ? !!p.properties[name].checkbox : false;
+
+// Si existen fórmulas ClientName/ProjectName, úsalas. Si no, cae al id de la relation (texto plano, no [object Object]).
+const getClients = (p) => {
+  const byFormula = getFormulaText(p.properties?.ClientName);
+  if (byFormula) return [byFormula];
+
+  const rel = p.properties?.Client;
+  if (rel?.type === "relation" && rel.relation?.length) {
+    return rel.relation.map(r => `Client ${r.id.slice(0, 6)}`);
   }
-  return false;
-}
+  return [];
+};
 
-function isArchived(page) {
-  const a = page.properties?.Archivado;
-  if (a && a.type === "checkbox") {
-    return a.checkbox === true;
+const getProjects = (p) => {
+  const byFormula = getFormulaText(p.properties?.ProjectName);
+  if (byFormula) return [byFormula];
+
+  const rel = p.properties?.Project;
+  if (rel?.type === "relation" && rel.relation?.length) {
+    return rel.relation.map(r => `Project ${r.id.slice(0, 6)}`);
   }
-  return false;
-}
+  return [];
+};
 
-function isPinned(page) {
-  const p = page.properties?.Pinned;
-  if (p && p.type === "checkbox") {
-    return p.checkbox === true;
+const countMapToArray = (map) =>
+  Array.from(map.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count);
+
+const buildFilters = (items) => {
+  const mClients = new Map();
+  const mProjects = new Map();
+  const mPlatforms = new Map();
+  const mOwners = new Map();
+  const mStatuses = new Map();
+
+  for (const it of items) {
+    it.clients.forEach(c => mClients.set(c, (mClients.get(c) || 0) + 1));
+    it.projects.forEach(p => mProjects.set(p, (mProjects.get(p) || 0) + 1));
+    it.platforms.forEach(pl => mPlatforms.set(pl, (mPlatforms.get(pl) || 0) + 1));
+    it.owners.forEach(o => mOwners.set(o, (mOwners.get(o) || 0) + 1));
+    if (it.status) mStatuses.set(it.status, (mStatuses.get(it.status) || 0) + 1);
   }
-  return false;
-}
-
-function isDraft(page) {
-  const d = page.properties?.Draft;
-  if (d && d.type === "formula" && d.formula && d.formula.type === "boolean") {
-    return d.formula.boolean === true;
-  }
-  return false;
-}
-
-// build filters -------------
-function buildFiltersFromPosts(posts) {
-  const clientsMap = new Map();
-  const projectsMap = new Map();
-  const platformsMap = new Map();
-  const ownersMap = new Map();
-  const statusMap = new Map();
-
-  for (const post of posts) {
-    // clients
-    const clients = post.clients;
-    clients.forEach((c) => {
-      if (!clientsMap.has(c)) clientsMap.set(c, 0);
-      clientsMap.set(c, clientsMap.get(c) + 1);
-    });
-
-    // projects
-    const projects = post.projects;
-    projects.forEach((p) => {
-      if (!projectsMap.has(p)) projectsMap.set(p, 0);
-      projectsMap.set(p, projectsMap.get(p) + 1);
-    });
-
-    // platforms
-    post.platforms.forEach((pl) => {
-      if (!platformsMap.has(pl)) platformsMap.set(pl, 0);
-      platformsMap.set(pl, platformsMap.get(pl) + 1);
-    });
-
-    // owners
-    post.owners.forEach((o) => {
-      if (!ownersMap.has(o)) ownersMap.set(o, 0);
-      ownersMap.set(o, ownersMap.get(o) + 1);
-    });
-
-    // status
-    if (post.status) {
-      if (!statusMap.has(post.status)) statusMap.set(post.status, 0);
-      statusMap.set(post.status, statusMap.get(post.status) + 1);
-    }
-  }
-
-  const toArr = (m) =>
-    Array.from(m.entries())
-      .map(([name, count]) => ({ name, count }))
-      .sort((a, b) => b.count - a.count);
 
   return {
-    clients: toArr(clientsMap),
-    projects: toArr(projectsMap),
-    platforms: toArr(platformsMap),
-    owners: toArr(ownersMap),
-    statuses: toArr(statusMap),
+    clients: countMapToArray(mClients),
+    projects: countMapToArray(mProjects),
+    platforms: countMapToArray(mPlatforms),
+    owners: countMapToArray(mOwners),
+    statuses: countMapToArray(mStatuses),
   };
-}
+};
 
 export default async function handler(req, res) {
   if (!DB_ID || !process.env.NOTION_TOKEN) {
-    return res.status(500).json({
-      ok: false,
-      error: "Missing NOTION_TOKEN or NOTION_DB_ID",
-    });
+    return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DB_ID" });
   }
 
   try {
-    // 1. traemos TODO lo visible
-    const query = await notion.databases.query({
+    // 1) Trae SOLO visibles (Archivado=false, Hide=false)
+    const q = await notion.databases.query({
       database_id: DB_ID,
       filter: {
         and: [
-          {
-            property: "Archivado",
-            checkbox: {
-              equals: false,
-            },
-          },
-          {
-            property: "Hide",
-            checkbox: {
-              equals: false,
-            },
-          },
+          { property: "Archivado", checkbox: { equals: false } },
+          { property: "Hide", checkbox: { equals: false } },
         ],
       },
-      sorts: [
-        {
-          property: "Publish Date",
-          direction: "descending",
-        },
-      ],
+      sorts: [{ property: "Publish Date", direction: "descending" }],
     });
 
-    // 2. mapeamos a nuestro formato
-    const pages = query.results || [];
+    const rows = q.results || [];
 
-    const mapped = pages.map((page) => {
-      const clients = getClientNames(page);
-      const projects = getProjectNames(page);
-      const platforms = getPlatforms(page);
-      const owners = getOwners(page);
-      const status = getStatus(page);
-
-      return {
-        id: page.id,
-        title: getTitle(page),
-        publishDate: getPublishDate(page),
-        clients,
-        projects,
-        platforms,
-        owners,
-        status,
-        pinned: isPinned(page),
-        draft: isDraft(page),
-        attachment: getAttachment(page),
+    // 2) Mapea a formato del widget
+    const all = rows.map((p) => {
+      const item = {
+        id: p.id,
+        title: getTitle(p),
+        publishDate: getDate(p),
+        attachment: getAttachment(p),
+        clients: getClients(p),
+        projects: getProjects(p),
+        platforms: getPlatforms(p),
+        owners: getOwners(p),
+        status: getStatus(p),
+        pinned: getCheckbox(p, "Pinned"),
+        draft: getCheckbox(p, "Draft"), // tu Draft es formula -> aquí solo lo incluimos si lo transformas a checkbox a futuro
       };
+      return item;
     });
 
-    // 3. filtrado por query (client, project, platform, owner, status)
-    const { client, project, platform, owner, status } = req.query;
+    // 3) Filtros dinámicos (client, project, platform, owner, status)
+    const { client, project, platform, owner, status } = req.query || {};
+    let list = all;
 
-    let filtered = mapped;
+    if (client && client !== "All Clients") list = list.filter((x) => x.clients.includes(client));
+    if (project && project !== "All Projects") list = list.filter((x) => x.projects.includes(project));
+    if (platform && platform !== "All Platforms") list = list.filter((x) => x.platforms.includes(platform));
+    if (owner && owner !== "All Owners") list = list.filter((x) => x.owners.includes(owner));
+    if (status && status !== "All Status") list = list.filter((x) => x.status === status);
 
-    if (client && client !== "All Clients") {
-      filtered = filtered.filter((p) => p.clients.includes(client));
-    }
-
-    if (project && project !== "All Projects") {
-      filtered = filtered.filter((p) => p.projects.includes(project));
-    }
-
-    if (platform && platform !== "All Platforms") {
-      filtered = filtered.filter((p) => p.platforms.includes(platform));
-    }
-
-    if (owner && owner !== "All Owners") {
-      filtered = filtered.filter((p) => p.owners.includes(owner));
-    }
-
-    if (status && status !== "All Status") {
-      filtered = filtered.filter((p) => p.status === status);
-    }
-
-    // 4. orden: pinned primero
-    filtered.sort((a, b) => {
+    // 4) Orden: pinned primero, luego por fecha descendente
+    list.sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
-      // luego por fecha
-      if (a.publishDate && b.publishDate) {
-        return a.publishDate < b.publishDate ? 1 : -1;
-      }
+      if (a.publishDate && b.publishDate) return a.publishDate < b.publishDate ? 1 : -1;
       return 0;
     });
 
-    // 5. construir filtros con base en TODOS los posts visibles (no solo filtrados)
-    const filters = buildFiltersFromPosts(mapped);
+    // 5) Arma filtros a partir de TODOS los visibles
+    const filters = buildFilters(all);
 
-    return res.status(200).json({
-      ok: true,
-      posts: filtered,
-      filters,
-      total: filtered.length,
-    });
+    return res.status(200).json({ ok: true, posts: list, filters });
   } catch (err) {
-    console.error("notion error", err.body || err.message || err);
-    return res.status(500).json({
-      ok: false,
-      error: "Notion error",
-      detail: err.body || err.message || null,
-    });
+    console.error("Notion error:", err?.body || err?.message || err);
+    return res.status(500).json({ ok: false, error: "Notion error", detail: err?.body || err?.message || null });
   }
 }
