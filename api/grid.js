@@ -7,10 +7,11 @@ export default async function handler(req, res) {
   try {
     const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
     if (!NOTION_TOKEN || !NOTION_DATABASE_ID) {
-      return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
+      return res
+        .status(500)
+        .json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
     }
 
-    // filtros que manda el front (pueden venir vacíos)
     const {
       clientId = "all",
       projectId = "all",
@@ -19,132 +20,98 @@ export default async function handler(req, res) {
       statusId = "all",
     } = req.query;
 
-    // armamos el filtro base
     const andFilters = [
       // Hide != true
       {
         or: [
-          {
-            property: "Hide",
-            checkbox: {
-              equals: false,
-            },
-          },
-          {
-            property: "Hide",
-            checkbox: {
-              does_not_equal: true,
-            },
-          },
+          { property: "Hide", checkbox: { equals: false } },
+          { property: "Hide", checkbox: { does_not_equal: true } },
         ],
       },
       // Archivado != true
       {
         or: [
-          {
-            property: "Archivado",
-            checkbox: {
-              equals: false,
-            },
-          },
-          {
-            property: "Archivado",
-            checkbox: {
-              does_not_equal: true,
-            },
-          },
+          { property: "Archivado", checkbox: { equals: false } },
+          { property: "Archivado", checkbox: { does_not_equal: true } },
         ],
       },
     ];
 
-    // si viene CLIENT
     if (clientId !== "all") {
       andFilters.push({
         property: "Client",
-        relation: {
-          contains: clientId,
-        },
+        relation: { contains: clientId },
       });
     }
 
-    // si viene PROJECT
     if (projectId !== "all") {
       andFilters.push({
         property: "Project",
-        relation: {
-          contains: projectId,
-        },
+        relation: { contains: projectId },
       });
     }
 
-    // si viene PLATFORM
     if (platformId !== "all") {
       andFilters.push({
         property: "Platform",
-        multi_select: {
-          contains: platformId,
-        },
+        multi_select: { contains: platformId },
       });
     }
 
-    // si viene OWNER
     if (ownerId !== "all") {
       andFilters.push({
         property: "Owner",
-        people: {
-          contains: ownerId,
-        },
+        people: { contains: ownerId },
       });
     }
 
-    // si viene STATUS
     if (statusId !== "all") {
       andFilters.push({
         property: "Status",
-        status: {
-          equals: statusId,
-        },
+        status: { equals: statusId },
       });
     }
 
-    const results = await queryAll({
+    const pages = await queryAll({
       database_id: NOTION_DATABASE_ID,
-      filter: {
-        and: andFilters,
-      },
+      filter: { and: andFilters },
       sorts: [
-        {
-          property: "Pinned",
-          direction: "descending",
-        },
-        {
-          property: "Publish Date",
-          direction: "descending",
-        },
-        {
-          timestamp: "created_time",
-          direction: "descending",
-        },
+        { property: "Pinned", direction: "descending" },
+        { property: "Publish Date", direction: "descending" },
+        { timestamp: "created_time", direction: "descending" },
       ],
     });
 
-    // mapeamos para el front
-    const posts = results.map((page) => {
-      const title = getTitle(page, "Post") || "Untitled";
+    const posts = pages.map((page) => {
+      const title = getTitle(page, "Post") || getTitle(page, "Name") || "Untitled";
       const date = getDate(page, "Publish Date");
-      const client = getRelationFirstId(page, "Client");
-      const project = getRelationFirstId(page, "Project");
       const pinned = getCheckbox(page, "Pinned");
-      const attachments = getFiles(page, "Attachment");
+
+      // media prioritario
+      const mediaUrl =
+        getFirstFile(page, "Attachment") ||
+        getFirstFile(page, "Link") ||
+        getFirstFile(page, "Canva") ||
+        getFirstFile(page, "Image") ||
+        getFirstFile(page, "Image Source") ||
+        null;
+
+      // platforms
+      const platforms = getMultiSelect(page, "Platform");
+      // owners
+      const owners = getPeople(page, "Owner");
+      // status
+      const status = getStatus(page, "Status");
 
       return {
         id: page.id,
         title,
         date,
-        client,
-        project,
         pinned,
-        attachments,
+        mediaUrl,
+        platforms,
+        owners,
+        status,
       };
     });
 
@@ -160,7 +127,7 @@ export default async function handler(req, res) {
 }
 
 async function queryAll(params) {
-  const pages = [];
+  const out = [];
   let hasMore = true;
   let cursor = undefined;
 
@@ -170,12 +137,11 @@ async function queryAll(params) {
       start_cursor: cursor,
       page_size: 50,
     });
-    pages.push(...resp.results);
+    out.push(...resp.results);
     hasMore = resp.has_more;
     cursor = resp.next_cursor;
   }
-
-  return pages;
+  return out;
 }
 
 function getTitle(page, propName) {
@@ -192,37 +158,47 @@ function getTitle(page, propName) {
 
 function getDate(page, propName) {
   const prop = page.properties?.[propName];
-  if (prop && prop.type === "date" && prop.date && prop.date.start) {
+  if (prop && prop.type === "date" && prop.date?.start) {
     return prop.date.start;
-  }
-  return null;
-}
-
-function getRelationFirstId(page, propName) {
-  const prop = page.properties?.[propName];
-  if (prop && prop.type === "relation" && prop.relation.length > 0) {
-    return prop.relation[0].id;
   }
   return null;
 }
 
 function getCheckbox(page, propName) {
   const prop = page.properties?.[propName];
-  if (prop && prop.type === "checkbox") {
-    return prop.checkbox;
-  }
-  return false;
+  return prop && prop.type === "checkbox" ? prop.checkbox : false;
 }
 
-function getFiles(page, propName) {
+function getFirstFile(page, propName) {
   const prop = page.properties?.[propName];
-  if (!prop || prop.type !== "files") return [];
-  return prop.files.map((f) => {
-    if (f.type === "file") {
-      return f.file.url;
-    } else if (f.type === "external") {
-      return f.external.url;
-    }
-    return null;
-  }).filter(Boolean);
+  if (!prop || prop.type !== "files") return null;
+  const first = prop.files[0];
+  if (!first) return null;
+  if (first.type === "file") return first.file.url;
+  if (first.type === "external") return first.external.url;
+  return null;
+}
+
+function getMultiSelect(page, propName) {
+  const prop = page.properties?.[propName];
+  if (prop && prop.type === "multi_select") {
+    return prop.multi_select.map((m) => m.name);
+  }
+  return [];
+}
+
+function getPeople(page, propName) {
+  const prop = page.properties?.[propName];
+  if (prop && prop.type === "people") {
+    return prop.people.map((p) => p.name || p.email || p.id);
+  }
+  return [];
+}
+
+function getStatus(page, propName) {
+  const prop = page.properties?.[propName];
+  if (prop && prop.type === "status" && prop.status) {
+    return prop.status.name;
+  }
+  return null;
 }
