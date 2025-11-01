@@ -1,273 +1,341 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>IG Grid</title>
-    <link rel="stylesheet" href="/styles.css" />
+    <title>Flujo Creativo – Instagram Grid</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
-    <div class="app">
-      <header class="topbar">
-        <div class="topbar-left">
-          <!-- sin "Posts" -->
-        </div>
-        <button id="refreshBtn" class="refresh-btn">Refresh</button>
-      </header>
+    <div class="app-shell">
+      <div class="topbar">
+        <button id="refreshBtn" class="refresh-btn">
+          <!-- icon refresh -->
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path
+              d="M4 4v6h6M20 20v-6h-6"
+              stroke="white"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <path
+              d="M5 15a7 7 0 0 0 12 2m2-8A7 7 0 0 0 7 5"
+              stroke="white"
+              stroke-width="1.4"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
+          <span>Refresh</span>
+        </button>
 
-      <div class="filters-row">
-        <select id="clientFilter" class="filter-pill">
-          <option value="all">All Clients</option>
-        </select>
-        <select id="projectFilter" class="filter-pill">
-          <option value="all">All Projects</option>
-        </select>
-        <select id="platformFilter" class="filter-pill">
-          <option value="all">All Platforms</option>
-        </select>
-        <select id="ownerFilter" class="filter-pill">
-          <option value="all">All Owners</option>
-        </select>
-        <select id="statusFilter" class="filter-pill">
-          <option value="all">All Status</option>
-        </select>
+        <div class="filters-row">
+          <select id="filterClient" class="filter-select">
+            <option value="all">All Clients</option>
+          </select>
+          <select id="filterProject" class="filter-select">
+            <option value="all">All Projects</option>
+          </select>
+          <select id="filterPlatform" class="filter-select">
+            <option value="all">All Platforms</option>
+          </select>
+          <select id="filterOwner" class="filter-select">
+            <option value="all">All Owners</option>
+          </select>
+          <select id="filterStatus" class="filter-select">
+            <option value="all">All Status</option>
+          </select>
+        </div>
       </div>
 
-      <div class="grid-wrapper">
-        <div id="postsGrid" class="posts-grid">
-          <div class="loading">Cargando…</div>
-        </div>
-      </div>
+      <div id="grid" class="grid"></div>
 
-      <button id="loadMoreBtn" class="load-more">Load more</button>
+      <button id="loadMoreBtn" class="load-more-btn">Load more</button>
+    </div>
+
+    <!-- viewer / modal básico -->
+    <div id="viewer" class="viewer hidden">
+      <div class="viewer-content">
+        <button id="viewerClose" class="viewer-close">×</button>
+        <img id="viewerImg" src="" alt="Media" class="viewer-img" />
+        <p id="viewerTitle" class="viewer-title"></p>
+      </div>
     </div>
 
     <script>
-      // estado
-      let FILTER_DATA = {
-        clients: [],
-        projects: [],
-        platforms: [],
-        owners: [],
-        statuses: [],
-      };
-      let CURRENT_FILTERS = {
+      const gridEl = document.getElementById("grid");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const loadMoreBtn = document.getElementById("loadMoreBtn");
+
+      const selClient = document.getElementById("filterClient");
+      const selProject = document.getElementById("filterProject");
+      const selPlatform = document.getElementById("filterPlatform");
+      const selOwner = document.getElementById("filterOwner");
+      const selStatus = document.getElementById("filterStatus");
+
+      const viewer = document.getElementById("viewer");
+      const viewerImg = document.getElementById("viewerImg");
+      const viewerTitle = document.getElementById("viewerTitle");
+      const viewerClose = document.getElementById("viewerClose");
+
+      let currentPageSize = 12; // siempre 12 visibles
+      let lastFilters = {
         client: "all",
         project: "all",
         platform: "all",
         owner: "all",
         status: "all",
       };
-      let PAGE_SIZE = 15;
-
-      const clientSel = document.getElementById("clientFilter");
-      const projectSel = document.getElementById("projectFilter");
-      const platformSel = document.getElementById("platformFilter");
-      const ownerSel = document.getElementById("ownerFilter");
-      const statusSel = document.getElementById("statusFilter");
-      const postsGrid = document.getElementById("postsGrid");
-      const refreshBtn = document.getElementById("refreshBtn");
-      const loadMoreBtn = document.getElementById("loadMoreBtn");
 
       async function loadFilters() {
         try {
           const resp = await fetch("/api/filters");
           const data = await resp.json();
-          if (!data.ok) throw new Error(data.error);
-          FILTER_DATA = data;
+          if (!data.ok) return;
 
           // clients
-          clientSel.innerHTML = '<option value="all">All Clients</option>';
           data.clients.forEach((c) => {
             const opt = document.createElement("option");
             opt.value = c.id;
             opt.textContent = c.name;
-            clientSel.appendChild(opt);
+            selClient.appendChild(opt);
           });
 
-          // projects (todos, luego filtramos según client)
-          renderProjectsForClient("all");
-
-          // platforms
-          platformSel.innerHTML = '<option value="all">All Platforms</option>';
-          data.platforms.forEach((p) => {
+          // projects
+          data.projects.forEach((p) => {
             const opt = document.createElement("option");
             opt.value = p.id;
-            opt.textContent = p.name;
-            platformSel.appendChild(opt);
+            opt.textContent = p.name || "Sin nombre";
+            selProject.appendChild(opt);
+          });
+
+          // platforms
+          data.platforms.forEach((p) => {
+            const opt = document.createElement("option");
+            opt.value = p;
+            opt.textContent = p;
+            selPlatform.appendChild(opt);
           });
 
           // owners
-          ownerSel.innerHTML = '<option value="all">All Owners</option>';
           data.owners.forEach((o) => {
             const opt = document.createElement("option");
             opt.value = o.id;
             opt.textContent = o.name;
-            ownerSel.appendChild(opt);
+            selOwner.appendChild(opt);
           });
 
           // statuses
-          statusSel.innerHTML = '<option value="all">All Status</option>';
           data.statuses.forEach((s) => {
             const opt = document.createElement("option");
-            opt.value = s.id;
-            opt.textContent = s.name;
-            statusSel.appendChild(opt);
+            opt.value = s;
+            opt.textContent = s;
+            selStatus.appendChild(opt);
           });
         } catch (err) {
-          console.error("Error cargando filtros:", err);
+          console.warn("Error cargando filtros", err);
         }
       }
 
-      function renderProjectsForClient(clientId) {
-        projectSel.innerHTML = '<option value="all">All Projects</option>';
-        const allProjects = FILTER_DATA.projects || [];
-        const list =
-          clientId === "all"
-            ? allProjects
-            : allProjects.filter((p) => p.clientIds?.includes(clientId));
-        list.forEach((p) => {
-          const opt = document.createElement("option");
-          opt.value = p.id;
-          opt.textContent = p.name || "Sin nombre";
-          projectSel.appendChild(opt);
-        });
+      function buildMediaPreview(item) {
+        if (!item.media || item.media.length === 0) {
+          return "";
+        }
+        return item.media[0].url;
       }
 
-      async function loadPosts(reset = true) {
-        if (reset) {
-          postsGrid.innerHTML = '<div class="loading">Cargando…</div>';
-        }
+      function renderItems(items) {
+        gridEl.innerHTML = "";
 
-        const params = new URLSearchParams({
-          client: CURRENT_FILTERS.client,
-          project: CURRENT_FILTERS.project,
-          platform: CURRENT_FILTERS.platform,
-          owner: CURRENT_FILTERS.owner,
-          status: CURRENT_FILTERS.status,
-          pageSize: PAGE_SIZE.toString(),
-        });
+        // pintamos los que llegaron
+        items.forEach((item) => {
+          const card = document.createElement("div");
+          card.className = "card";
 
-        const resp = await fetch("/api/grid?" + params.toString());
-        const data = await resp.json();
+          const src = buildMediaPreview(item);
 
-        if (!data.ok) {
-          postsGrid.innerHTML =
-            '<div class="error">No se pudieron cargar los posts.</div>';
-          return;
-        }
+          const media = document.createElement("div");
+          media.className = "card-media";
 
-        const { posts } = data;
-
-        if (reset) postsGrid.innerHTML = "";
-
-        if (!posts.length) {
-          postsGrid.innerHTML =
-            '<div class="no-content">No content</div>';
-          return;
-        }
-
-        posts.forEach((post) => {
-          const card = document.createElement("article");
-          card.className = "post-card";
-
-          const firstMedia = post.media?.[0];
-
-          if (firstMedia) {
-            card.style.backgroundImage = `url(${firstMedia.url})`;
+          if (src) {
+            const img = document.createElement("img");
+            img.src = src;
+            img.alt = item.title || "";
+            img.className = "card-img";
+            media.appendChild(img);
           } else {
-            card.classList.add("no-image");
-            card.textContent = "No content";
+            const nc = document.createElement("div");
+            nc.className = "card-empty";
+            nc.textContent = "No content";
+            media.appendChild(nc);
           }
 
-          // overlay info
-          const overlay = document.createElement("div");
-          overlay.className = "overlay";
+          // overlay bottom
+          const bottom = document.createElement("div");
+          bottom.className = "card-bottom";
+          const title = document.createElement("span");
+          title.className = "card-title";
+          title.textContent = item.title || "Sin nombre";
+          const date = document.createElement("span");
+          date.className = "card-date";
+          date.textContent = item.date ? new Date(item.date).toISOString().slice(0, 10) : "";
 
-          const title = document.createElement("div");
-          title.className = "title";
-          title.textContent = post.title;
+          bottom.appendChild(title);
+          bottom.appendChild(date);
+          media.appendChild(bottom);
 
-          const date = document.createElement("div");
-          date.className = "date";
-          date.textContent = post.date ? post.date : "";
+          // overlay top-right icons
+          const topIcons = document.createElement("div");
+          topIcons.className = "card-icons";
 
-          overlay.appendChild(title);
-          overlay.appendChild(date);
-
-          // pin
-          if (post.pinned) {
-            const pin = document.createElement("div");
-            pin.className = "pin-icon";
-            pin.textContent = "📌";
-            card.appendChild(pin);
+          if (item.pinned) {
+            const pin = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            pin.setAttribute("viewBox", "0 0 24 24");
+            pin.setAttribute("class", "icon");
+            pin.innerHTML =
+              '<path d="M9 3l6 6-1.5 1.5L10.5 7.5 9 9l3 3L7 17 5 15l5-5-1.5-1.5L9 3z" fill="white"/>';
+            topIcons.appendChild(pin);
           }
 
-          // video icon
-          if (firstMedia && firstMedia.kind === "video") {
-            const vid = document.createElement("div");
-            vid.className = "video-icon";
-            vid.textContent = "▶";
-            card.appendChild(vid);
+          if (item.isVideo) {
+            const play = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            play.setAttribute("viewBox", "0 0 24 24");
+            play.setAttribute("class", "icon");
+            play.innerHTML =
+              '<path d="M8 5v14l11-7-11-7z" fill="white" stroke="white" stroke-width="0.5"/>';
+            topIcons.appendChild(play);
           }
 
-          // carrusel (si hay más de 1 media)
-          if (post.media && post.media.length > 1) {
-            const car = document.createElement("div");
-            car.className = "carousel-icon";
-            car.textContent = "⋯";
-            card.appendChild(car);
+          if (item.media && item.media.length > 1) {
+            const carousel = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+            carousel.setAttribute("viewBox", "0 0 24 24");
+            carousel.setAttribute("class", "icon");
+            carousel.innerHTML =
+              '<circle cx="9" cy="12" r="2" fill="white"/><circle cx="14" cy="12" r="2" fill="white"/><circle cx="19" cy="12" r="2" fill="white"/>';
+            topIcons.appendChild(carousel);
           }
 
-          card.appendChild(overlay);
-          postsGrid.appendChild(card);
+          if (topIcons.childNodes.length > 0) {
+            media.appendChild(topIcons);
+          }
+
+          card.appendChild(media);
+
+          // click → viewer
+          card.addEventListener("click", () => {
+            if (src) {
+              viewerImg.src = src;
+              viewerTitle.textContent = item.title || "";
+              viewer.classList.remove("hidden");
+            }
+          });
+
+          gridEl.appendChild(card);
         });
+
+        // si no llegó a 12 → rellenamos
+        const missing = 12 - items.length;
+        if (missing > 0) {
+          for (let i = 0; i < missing; i++) {
+            const card = document.createElement("div");
+            card.className = "card";
+            const media = document.createElement("div");
+            media.className = "card-media";
+            const nc = document.createElement("div");
+            nc.className = "card-empty";
+            nc.textContent = "No content";
+            media.appendChild(nc);
+            card.appendChild(media);
+            gridEl.appendChild(card);
+          }
+        }
       }
 
-      // listeners
-      clientSel.addEventListener("change", (e) => {
-        const val = e.target.value;
-        CURRENT_FILTERS.client = val;
-        // actualizar projects según client
-        renderProjectsForClient(val);
-        // y reset project
-        CURRENT_FILTERS.project = "all";
-        loadPosts(true);
+      async function loadGrid(extra = {}) {
+        const params = new URLSearchParams({
+          client: lastFilters.client,
+          project: lastFilters.project,
+          platform: lastFilters.platform,
+          owner: lastFilters.owner,
+          status: lastFilters.status,
+          pageSize: currentPageSize,
+        });
+        const url = `/api/grid?${params.toString()}`;
+
+        try {
+          const resp = await fetch(url);
+          const text = await resp.text();
+
+          // a veces Vercel manda HTML de error → lo atrapamos
+          let data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            console.warn("Respuesta no JSON:", text);
+            renderItems([]); // para que no se rompa
+            return;
+          }
+
+          if (!data.ok) {
+            console.warn("Error en grid:", data.error);
+            renderItems([]);
+            return;
+          }
+
+          renderItems(data.items || []);
+        } catch (err) {
+          console.warn("No se pudo conectar con /api/grid.", err);
+          renderItems([]);
+        }
+      }
+
+      // eventos filtros
+      selClient.addEventListener("change", () => {
+        lastFilters.client = selClient.value;
+        // si cambia client, dejamos project en "all" (protocolo tuyo)
+        selProject.value = "all";
+        lastFilters.project = "all";
+        loadGrid();
       });
 
-      projectSel.addEventListener("change", (e) => {
-        CURRENT_FILTERS.project = e.target.value;
-        loadPosts(true);
+      selProject.addEventListener("change", () => {
+        lastFilters.project = selProject.value;
+        loadGrid();
       });
 
-      platformSel.addEventListener("change", (e) => {
-        CURRENT_FILTERS.platform = e.target.value;
-        loadPosts(true);
+      selPlatform.addEventListener("change", () => {
+        lastFilters.platform = selPlatform.value;
+        loadGrid();
       });
 
-      ownerSel.addEventListener("change", (e) => {
-        CURRENT_FILTERS.owner = e.target.value;
-        loadPosts(true);
+      selOwner.addEventListener("change", () => {
+        lastFilters.owner = selOwner.value;
+        loadGrid();
       });
 
-      statusSel.addEventListener("change", (e) => {
-        CURRENT_FILTERS.status = e.target.value;
-        loadPosts(true);
+      selStatus.addEventListener("change", () => {
+        lastFilters.status = selStatus.value;
+        loadGrid();
       });
 
       refreshBtn.addEventListener("click", () => {
-        loadPosts(true);
+        loadGrid();
       });
 
       loadMoreBtn.addEventListener("click", () => {
-        PAGE_SIZE += 15;
-        loadPosts(true);
+        currentPageSize += 12;
+        loadGrid();
+      });
+
+      viewerClose.addEventListener("click", () => {
+        viewer.classList.add("hidden");
       });
 
       // init
       (async function init() {
         await loadFilters();
-        await loadPosts(true);
+        await loadGrid();
       })();
     </script>
   </body>
