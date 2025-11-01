@@ -1,411 +1,249 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Content Grid</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Posts</title>
   <link rel="stylesheet" href="/styles.css" />
 </head>
-<body class="fc-body">
-  <!-- WRAPPER -->
-  <div class="fc-page">
-    <!-- HEADER / TOOLBAR -->
-    <header class="fc-header">
-      <div class="fc-header-left">
-        <h1 class="fc-title">Posts <span id="fc-count" class="fc-count"></span></h1>
-      </div>
-      <div class="fc-header-right">
-        <button id="fc-refresh" class="fc-btn fc-btn-secondary">Refresh</button>
-        <div class="fc-search-wrap">
-          <input id="fc-search" type="search" class="fc-input" placeholder="Buscar..." />
-        </div>
-      </div>
-    </header>
+<body>
+  <header class="topbar">
+    <h1 class="title">Posts <span id="count"></span></h1>
+    <div class="actions">
+      <button id="refreshBtn">Refresh</button>
+      <input id="search" placeholder="Buscar..." />
+    </div>
+  </header>
 
-    <!-- FILTER BAR -->
-    <section class="fc-filters">
-      <div class="fc-filters-row">
-        <select id="fc-client" class="fc-select">
-          <option value="all">All Clients</option>
-        </select>
+  <section class="filters">
+    <select id="fClient"><option value="">All Clients</option></select>
+    <select id="fProject"><option value="">All Projects</option></select>
+    <select id="fBrand"><option value="">All Brands</option></select>
+    <select id="fPlatform"><option value="">All Platforms</option></select>
+    <select id="fStatus">
+      <option value="published" selected>Published Only</option>
+      <option value="all">All Status</option>
+    </select>
+  </section>
 
-        <select id="fc-project" class="fc-select">
-          <option value="all">All Projects</option>
-        </select>
+  <main>
+    <div id="grid" class="grid"></div>
+    <div class="center">
+      <button id="loadMore" style="display:none;">Load more</button>
+    </div>
+  </main>
 
-        <select id="fc-brand" class="fc-select" disabled>
-          <option value="all">All Brands</option>
-        </select>
-
-        <select id="fc-platform" class="fc-select">
-          <option value="all">All Platforms</option>
-        </select>
-
-        <select id="fc-status" class="fc-select">
-          <option value="published">Published Only</option>
-          <option value="all">All Status</option>
-        </select>
-      </div>
-
-      <!-- chips dinámicos -->
-      <div id="fc-chips" class="fc-chips"></div>
-    </section>
-
-    <!-- GRID -->
-    <main class="fc-main">
-      <div id="fc-grid" class="fc-grid">
-        <!-- aquí se pintan las cards -->
-      </div>
-      <div class="fc-loadmore">
-        <button id="fc-loadmore" class="fc-btn" style="display:none;">Load more</button>
-      </div>
-      <div id="fc-error" class="fc-error" style="display:none;"></div>
-    </main>
-  </div>
-
-  <!-- MODAL -->
-  <div id="fc-modal" class="fc-modal" aria-hidden="true">
-    <div class="fc-modal-backdrop" id="fc-modal-backdrop"></div>
-    <div class="fc-modal-content">
-      <button id="fc-modal-close" class="fc-modal-close" aria-label="Cerrar">×</button>
-      <div class="fc-modal-media" id="fc-modal-media"></div>
-      <div class="fc-modal-copy" id="fc-modal-copy"></div>
-      <div class="fc-modal-meta" id="fc-modal-meta"></div>
-      <!-- indicadores carrusel si quieres luego -->
+  <!-- Modal -->
+  <div id="modal" class="modal hidden" tabindex="-1">
+    <div class="modal-backdrop"></div>
+    <div class="modal-content">
+      <button id="modalClose" class="modal-close" aria-label="Close">×</button>
+      <div id="modalMedia" class="modal-media"></div>
+      <div id="modalCopy" class="modal-copy"></div>
+      <div id="modalInfo" class="modal-info"></div>
     </div>
   </div>
 
-  <script>
-  // ==============================
-  //  ESTADO
-  // ==============================
-  const state = {
-    items: [],
-    nextCursor: null,
-    filters: {
-      client: 'all',
-      project: 'all',
-      brand: 'all',
-      platform: 'all',
-      status: 'published',
-      q: ''
-    }
-  };
+<script>
+const state = {
+  status: 'published',
+  client: '', project: '', brand: '', platform: '', owner: '',
+  q: '',
+  limit: 12,
+  offset: 0,
+  total: 0
+};
 
-  // ==============================
-  //  ELEMENTOS
-  // ==============================
-  const elGrid     = document.getElementById('fc-grid');
-  const elCount    = document.getElementById('fc-count');
-  const elError    = document.getElementById('fc-error');
-  const elLoadMore = document.getElementById('fc-loadmore');
+const els = {
+  count: document.getElementById('count'),
+  grid: document.getElementById('grid'),
+  loadMore: document.getElementById('loadMore'),
+  refresh: document.getElementById('refreshBtn'),
+  search: document.getElementById('search'),
+  fStatus: document.getElementById('fStatus'),
+  fClient: document.getElementById('fClient'),
+  fProject: document.getElementById('fProject'),
+  fBrand: document.getElementById('fBrand'),
+  fPlatform: document.getElementById('fPlatform'),
+  modal: document.getElementById('modal'),
+  modalClose: document.getElementById('modalClose'),
+  modalMedia: document.getElementById('modalMedia'),
+  modalCopy: document.getElementById('modalCopy'),
+  modalInfo: document.getElementById('modalInfo')
+};
 
-  const elClient   = document.getElementById('fc-client');
-  const elProject  = document.getElementById('fc-project');
-  const elBrand    = document.getElementById('fc-brand');
-  const elPlatform = document.getElementById('fc-platform');
-  const elStatus   = document.getElementById('fc-status');
-  const elSearch   = document.getElementById('fc-search');
-  const elRefresh  = document.getElementById('fc-refresh');
-  const elChips    = document.getElementById('fc-chips');
+function qs(obj) {
+  const p = new URLSearchParams();
+  if (obj.status) p.set('status', obj.status);
+  if (obj.client) p.set('client', obj.client);
+  if (obj.project) p.set('project', obj.project);
+  if (obj.brand) p.set('brand', obj.brand);
+  if (obj.platform) p.set('platform', obj.platform);
+  if (obj.owner) p.set('owner', obj.owner);
+  if (obj.q) p.set('q', obj.q);
+  p.set('limit', obj.limit);
+  p.set('offset', obj.offset);
+  return p.toString();
+}
 
-  const elModal       = document.getElementById('fc-modal');
-  const elModalClose  = document.getElementById('fc-modal-close');
-  const elModalMedia  = document.getElementById('fc-modal-media');
-  const elModalCopy   = document.getElementById('fc-modal-copy');
-  const elModalMeta   = document.getElementById('fc-modal-meta');
-  const elModalBackdrop = document.getElementById('fc-modal-backdrop');
-
-  // ==============================
-  //  FETCH
-  // ==============================
-  async function fetchPosts(reset = true) {
-    let qs = new URLSearchParams();
-    if (state.filters.client !== 'all')   qs.set('client', state.filters.client);
-    if (state.filters.project !== 'all')  qs.set('project', state.filters.project);
-    if (state.filters.brand !== 'all')    qs.set('brand', state.filters.brand);
-    if (state.filters.platform !== 'all') qs.set('platform', state.filters.platform);
-    if (state.filters.status)             qs.set('status', state.filters.status);
-    if (state.filters.q)                  qs.set('q', state.filters.q);
-    qs.set('limit', '12');
-    if (!reset && state.nextCursor)       qs.set('cursor', state.nextCursor);
-
-    const res = await fetch('/api/grid?' + qs.toString());
-    const json = await res.json();
-
-    if (!json.ok) {
-      showError(json.error || 'Error cargando posts');
-      return;
-    }
-
-    hideError();
-
-    const posts = json.posts || [];
-    if (reset) {
-      state.items = posts;
-    } else {
-      state.items = state.items.concat(posts);
-    }
-
-    state.nextCursor = json.next_cursor || null;
-    renderGrid();
-    renderFiltersFromMeta(json.filters || {});
-
-    // loadmore
-    elLoadMore.style.display = state.nextCursor ? 'inline-flex' : 'none';
-  }
-
-  // ==============================
-  //  RENDER
-  // ==============================
-  function renderGrid() {
-    elGrid.innerHTML = '';
-    if (!state.items.length) {
-      elGrid.innerHTML = '<div class="fc-empty">No hay posts</div>';
-      elCount.textContent = '';
-      return;
-    }
-
-    state.items.forEach(post => {
-      elGrid.appendChild(renderCard(post));
-    });
-
-    elCount.textContent = '(' + state.items.length + ')';
-    renderChips();
-  }
-
-  function renderCard(post) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'fc-card';
-
-    // media
-    let mediaHtml = '<div class="fc-card-media fc-card-placeholder">No image</div>';
-    const mainAsset = (post.assets && post.assets[0]) || null;
-    if (mainAsset) {
-      if (mainAsset.type === 'video') {
-        mediaHtml = `
-          <div class="fc-card-media">
-            <video src="${mainAsset.url}" muted playsinline></video>
-            <span class="fc-badge fc-badge-video">▶</span>
-          </div>
-        `;
-      } else {
-        mediaHtml = `
-          <div class="fc-card-media">
-            <img src="${mainAsset.url}" alt="${escapeHtml(post.title || '')}" />
-          </div>
-        `;
-      }
-    }
-
-    // overlay (title + date)
-    const metaText = [
-      post.client,
-      post.project,
-      post.date
-    ].filter(Boolean).join(' · ');
-
-    btn.innerHTML = `
-      ${mediaHtml}
-      <div class="fc-card-overlay">
-        <div class="fc-card-title">${escapeHtml(post.title || '')}</div>
-        <div class="fc-card-meta">${escapeHtml(metaText)}</div>
-      </div>
-    `;
-
-    // autoplay hover
-    btn.addEventListener('mouseenter', () => {
-      const v = btn.querySelector('video');
-      if (v) v.play().catch(() => {});
-    });
-    btn.addEventListener('mouseleave', () => {
-      const v = btn.querySelector('video');
-      if (v) {
-        v.pause();
-        v.currentTime = 0;
-      }
-    });
-
-    btn.addEventListener('click', () => openModal(post));
-    return btn;
-  }
-
-  function renderFiltersFromMeta(meta) {
-    // clients
-    if (Array.isArray(meta.clients) && meta.clients.length) {
-      elClient.innerHTML = '<option value="all">All Clients</option>' +
-        meta.clients.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-      elClient.disabled = false;
-    } else {
-      elClient.innerHTML = '<option value="all">All Clients</option>';
-      elClient.disabled = false;
-    }
-
-    // projects
-    if (Array.isArray(meta.projects) && meta.projects.length) {
-      elProject.innerHTML = '<option value="all">All Projects</option>' +
-        meta.projects.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-    }
-
-    // brands
-    if (Array.isArray(meta.brands) && meta.brands.length) {
-      elBrand.innerHTML = '<option value="all">All Brands</option>' +
-        meta.brands.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
-      elBrand.disabled = false;
-    } else {
-      elBrand.innerHTML = '<option value="all">All Brands</option>';
-      elBrand.disabled = true;
-    }
-
-    // platforms
-    if (Array.isArray(meta.platforms) && meta.platforms.length) {
-      elPlatform.innerHTML = '<option value="all">All Platforms</option>' +
-        meta.platforms.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)}</option>`).join('');
-    }
-  }
-
-  function renderChips() {
-    const f = state.filters;
-    const parts = [];
-    if (f.client !== 'all') parts.push(makeChip('Client', f.client, () => { state.filters.client='all'; fetchPosts(true); }));
-    if (f.project !== 'all') parts.push(makeChip('Project', f.project, () => { state.filters.project='all'; fetchPosts(true); }));
-    if (f.brand !== 'all') parts.push(makeChip('Brand', f.brand, () => { state.filters.brand='all'; fetchPosts(true); }));
-    if (f.platform !== 'all') parts.push(makeChip('Platform', f.platform, () => { state.filters.platform='all'; fetchPosts(true); }));
-    if (f.status !== 'published') parts.push(makeChip('Status', f.status, () => { state.filters.status='published'; fetchPosts(true); }));
-    if (f.q) parts.push(makeChip('Search', f.q, () => { state.filters.q=''; elSearch.value=''; fetchPosts(true); }));
-
-    elChips.innerHTML = parts.join('');
-  }
-
-  function makeChip(label, value, onRemove) {
-    const id = 'fc-chip-' + Math.random().toString(36).slice(2);
-    queueMicrotask(() => {
-      const btn = document.getElementById(id);
-      if (btn) btn.onclick = onRemove;
-    });
-    return `<span class="fc-chip">${label}: ${escapeHtml(value)} <button id="${id}" type="button" class="fc-chip-x">×</button></span>`;
-  }
-
-  // ==============================
-  //  MODAL
-  // ==============================
-  function openModal(post) {
-    // media
-    elModalMedia.innerHTML = '';
-    const main = (post.assets && post.assets[0]) || null;
-    if (main) {
-      if (main.type === 'video') {
-        const v = document.createElement('video');
-        v.src = main.url;
-        v.controls = true;
-        v.playsInline = true;
-        v.autoplay = true;
-        elModalMedia.appendChild(v);
-      } else {
-        const img = document.createElement('img');
-        img.src = main.url;
-        img.alt = post.title || '';
-        elModalMedia.appendChild(img);
-      }
-    } else {
-      elModalMedia.innerHTML = '<div class="fc-modal-empty">Sin media</div>';
-    }
-
-    // copy
-    if (post.copy) {
-      elModalCopy.textContent = post.copy;
-      elModalCopy.style.display = 'block';
-    } else {
-      elModalCopy.style.display = 'none';
-    }
-
-    // meta
-    const metaText = [
-      post.title,
-      post.client,
-      post.project,
-      post.date
-    ].filter(Boolean).join(' · ');
-    elModalMeta.textContent = metaText;
-
-    elModal.setAttribute('aria-hidden', 'false');
-    elModal.classList.add('is-open');
-  }
-
-  function closeModal() {
-    elModal.setAttribute('aria-hidden', 'true');
-    elModal.classList.remove('is-open');
-    elModalMedia.innerHTML = '';
-  }
-
-  elModalClose.addEventListener('click', closeModal);
-  elModalBackdrop.addEventListener('click', closeModal);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && elModal.classList.contains('is-open')) {
-      closeModal();
-    }
+function optionize(select, items, label = 'name') {
+  // Mantiene "All ..." como primer option
+  const first = select.querySelector('option');
+  select.innerHTML = '';
+  if (first) select.appendChild(first);
+  (items || []).forEach(it => {
+    const opt = document.createElement('option');
+    const name = (typeof it === 'string') ? it : it.name;
+    const count = (typeof it === 'object' && 'count' in it) ? it.count : null;
+    opt.value = name;
+    opt.textContent = count != null ? `${name} (${count})` : name;
+    select.appendChild(opt);
   });
+}
 
-  // ==============================
-  //  ERRORES
-  // ==============================
-  function showError(msg) {
-    elError.style.display = 'block';
-    elError.textContent = msg;
-    elGrid.innerHTML = '';
-  }
-  function hideError() {
-    elError.style.display = 'none';
-    elError.textContent = '';
-  }
+function card(post) {
+  const div = document.createElement('div');
+  div.className = 'card';
+  div.tabIndex = 0;
 
-  function escapeHtml(s) {
-    return String(s || '').replace(/[&<>"']/g, c => ({
-      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-    }[c]));
+  const img = document.createElement('div');
+  img.className = 'thumb';
+  const url = (post.assets && post.assets[0] && post.assets[0].url) ? post.assets[0].url : '';
+  if (url) {
+    img.style.backgroundImage = `url('${url}')`;
+  } else {
+    img.classList.add('thumb-empty');
+    img.textContent = 'No image';
   }
 
-  // ==============================
-  //  EVENTOS
-  // ==============================
-  elRefresh.addEventListener('click', () => fetchPosts(true));
-  elLoadMore.addEventListener('click', () => fetchPosts(false));
+  const title = document.createElement('div');
+  title.className = 'card-title';
+  title.textContent = post.title || 'Untitled';
 
-  elClient.addEventListener('change', () => {
-    state.filters.client = elClient.value;
-    fetchPosts(true);
-  });
-  elProject.addEventListener('change', () => {
-    state.filters.project = elProject.value;
-    fetchPosts(true);
-  });
-  elBrand.addEventListener('change', () => {
-    state.filters.brand = elBrand.value;
-    fetchPosts(true);
-  });
-  elPlatform.addEventListener('change', () => {
-    state.filters.platform = elPlatform.value;
-    fetchPosts(true);
-  });
-  elStatus.addEventListener('change', () => {
-    state.filters.status = elStatus.value;
-    fetchPosts(true);
-  });
+  const footer = document.createElement('div');
+  footer.className = 'card-footer';
+  footer.textContent = (post.date || '').slice(0, 10);
 
-  let searchTimer;
-  elSearch.addEventListener('input', (e) => {
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(() => {
-      state.filters.q = e.target.value.trim();
-      fetchPosts(true);
-    }, 250);
-  });
+  div.appendChild(img);
+  div.appendChild(title);
+  div.appendChild(footer);
 
-  // ==============================
-  //  INIT
-  // ==============================
-  fetchPosts(true);
-  </script>
+  div.addEventListener('click', () => openModal(post));
+  return div;
+}
+
+function openModal(post) {
+  els.modalMedia.innerHTML = '';
+  els.modalCopy.textContent = '';
+  els.modalInfo.textContent = '';
+
+  const url = (post.assets && post.assets[0] && post.assets[0].url) ? post.assets[0].url : '';
+  if (url && /\.(mp4|mov|webm)$/i.test(url)) {
+    const v = document.createElement('video');
+    v.src = url; v.controls = true;
+    els.modalMedia.appendChild(v);
+  } else if (url) {
+    const img = document.createElement('img');
+    img.src = url; img.alt = post.title || '';
+    els.modalMedia.appendChild(img);
+  } else {
+    const p = document.createElement('div');
+    p.className = 'modal-noimg';
+    p.textContent = 'No image';
+    els.modalMedia.appendChild(p);
+  }
+
+  if (post.copy) {
+    const box = document.createElement('div');
+    box.className = 'copybox';
+    box.textContent = post.copy;
+    els.modalCopy.appendChild(box);
+  }
+
+  const info = [];
+  if (post.title) info.push(post.title);
+  const meta = [];
+  if (post.date) meta.push(post.date.slice(0,10));
+  if (post.clients && post.clients.length) meta.push(post.clients.join(', '));
+  if (post.projectNames && post.projectNames.length) meta.push(post.projectNames.join(', '));
+  if (meta.length) info.push('· ' + meta.join(' · '));
+  els.modalInfo.textContent = info.join('\n');
+
+  els.modal.classList.remove('hidden');
+  els.modal.focus();
+}
+function closeModal() {
+  els.modal.classList.add('hidden');
+}
+els.modalClose.addEventListener('click', closeModal);
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+els.modal.addEventListener('click', (e) => {
+  if (e.target === els.modal || e.target.classList.contains('modal-backdrop')) closeModal();
+});
+
+// Render y fetch
+async function fetchPage(reset = false) {
+  if (reset) {
+    state.offset = 0;
+    els.grid.innerHTML = '';
+  }
+  const url = `/api/grid?${qs({
+    status: state.status,
+    client: state.client,
+    project: state.project,
+    brand: state.brand,
+    platform: state.platform,
+    owner: state.owner,
+    q: state.q,
+    limit: state.limit,
+    offset: state.offset
+  })}`;
+
+  const r = await fetch(url);
+  const data = await r.json();
+  if (!data.ok) {
+    els.count.textContent = '';
+    els.grid.innerHTML = `<div class="error">Error cargando posts</div>`;
+    els.loadMore.style.display = 'none';
+    return;
+  }
+
+  // Título contador
+  state.total = data.total || 0;
+  els.count.textContent = `(${state.total})`;
+
+  // Dropdowns con contadores (orden DESC)
+  if (state.offset === 0) {
+    optionize(els.fClient, data.filters?.clients || []);
+    optionize(els.fProject, data.filters?.projects || []);
+    optionize(els.fBrand, data.filters?.brands || []);
+    optionize(els.fPlatform, data.filters?.platforms || []);
+  }
+
+  // Cards
+  (data.posts || []).forEach(p => els.grid.appendChild(card(p)));
+
+  // Load more
+  if (data.has_more) {
+    state.offset = data.next_offset;
+    els.loadMore.style.display = 'inline-flex';
+  } else {
+    els.loadMore.style.display = 'none';
+  }
+}
+
+// Listeners
+els.refresh.addEventListener('click', () => fetchPage(true));
+els.search.addEventListener('input', (e) => { state.q = e.target.value || ''; fetchPage(true); });
+els.fStatus.addEventListener('change', (e) => { state.status = e.target.value; fetchPage(true); });
+els.fClient.addEventListener('change', (e) => { state.client = e.target.value; fetchPage(true); });
+els.fProject.addEventListener('change', (e) => { state.project = e.target.value; fetchPage(true); });
+els.fBrand.addEventListener('change', (e) => { state.brand = e.target.value; fetchPage(true); });
+els.fPlatform.addEventListener('change', (e) => { state.platform = e.target.value; fetchPage(true); });
+els.loadMore.addEventListener('click', () => fetchPage(false));
+
+// Primer render
+fetchPage(true);
+</script>
 </body>
 </html>
