@@ -10,16 +10,22 @@ const CONTENT_DB = process.env.NOTION_DATABASE_ID;
 function getFilesArray(prop) {
   if (!prop) return [];
   if (prop.type === "files" && Array.isArray(prop.files)) {
-    return prop.files.map((f) => ({
-      url: f.file?.url || f.external?.url || "",
-    })).filter(f => f.url);
+    return prop.files
+      .map((f) => ({
+        url: f.file?.url || f.external?.url || "",
+      }))
+      .filter((f) => f.url);
   }
   return [];
 }
 
 function guessKind(url = "") {
   const lower = url.toLowerCase();
-  if (lower.endsWith(".mp4") || lower.endsWith(".mov") || lower.endsWith(".m4v")) {
+  if (
+    lower.endsWith(".mp4") ||
+    lower.endsWith(".mov") ||
+    lower.endsWith(".m4v")
+  ) {
     return "video";
   }
   return "image";
@@ -28,49 +34,32 @@ function guessKind(url = "") {
 export default async function handler(req, res) {
   try {
     if (!CONTENT_DB || !process.env.NOTION_TOKEN) {
-      return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
+      return res
+        .status(500)
+        .json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
     }
 
-    // filtros enviados desde el front
     const { client, project, platform, owner, status } = req.query || {};
 
-    const filters = [];
+    // 🔐 FILTROS BASE (versión válida para Notion)
+    const filters = [
+      // Hide = false
+      {
+        property: "Hide",
+        checkbox: {
+          equals: false,
+        },
+      },
+      // Archivado = false
+      {
+        property: "Archivado",
+        checkbox: {
+          equals: false,
+        },
+      },
+    ];
 
-    // HIDE / ARCHIVADO siempre
-    filters.push({
-      or: [
-        {
-          property: "Hide",
-          checkbox: {
-            equals: false,
-          },
-        },
-        {
-          property: "Hide",
-          checkbox: {
-            is_empty: true,
-          },
-        },
-      ],
-    });
-
-    filters.push({
-      or: [
-        {
-          property: "Archivado",
-          checkbox: {
-            equals: false,
-          },
-        },
-        {
-          property: "Archivado",
-          checkbox: {
-            is_empty: true,
-          },
-        },
-      ],
-    });
-
+    // filtros dinámicos
     if (client && client !== "all") {
       filters.push({
         property: "Client",
@@ -119,38 +108,26 @@ export default async function handler(req, res) {
     const queryPayload = {
       database_id: CONTENT_DB,
       sorts: [
-        {
-          property: "Pinned",
-          direction: "descending",
-        },
-        {
-          property: "Publish Date",
-          direction: "descending",
-        },
-        {
-          timestamp: "created_time",
-          direction: "descending",
-        },
+        { property: "Pinned", direction: "descending" },
+        { property: "Publish Date", direction: "descending" },
+        { timestamp: "created_time", direction: "descending" },
       ],
-    };
-
-    if (filters.length > 0) {
-      queryPayload.filter = {
+      filter: {
         and: filters,
-      };
-    }
+      },
+    };
 
     const { results } = await notion.databases.query(queryPayload);
 
     const posts = results.map((page) => {
       const props = page.properties || {};
 
-      // 1) sacar TODAS las medias en orden de prioridad
+      // PRIORIDAD: Attachment → Link → Canva
       const attachmentFiles = getFilesArray(props["Attachment"]);
       const linkFiles = getFilesArray(props["Link"]);
       const canvaFiles = getFilesArray(props["Canva"]);
-
       const mediaRaw = [...attachmentFiles, ...linkFiles, ...canvaFiles];
+
       const media = mediaRaw.map((m) => ({
         url: m.url,
         kind: guessKind(m.url),
@@ -160,9 +137,11 @@ export default async function handler(req, res) {
         props["Post"]?.title?.[0]?.plain_text ||
         props["Name"]?.title?.[0]?.plain_text ||
         "Sin nombre";
+
       const date = props["Publish Date"]?.date?.start || null;
       const pinned = props["Pinned"]?.checkbox || false;
-      const copy = props["Copy"]?.rich_text?.map((t) => t.plain_text).join(" ") || "";
+      const copy =
+        props["Copy"]?.rich_text?.map((t) => t.plain_text).join(" ") || "";
 
       return {
         id: page.id,
