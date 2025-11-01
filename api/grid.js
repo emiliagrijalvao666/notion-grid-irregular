@@ -1,13 +1,15 @@
 // api/grid.js
 import { Client as NotionClient } from "@notionhq/client";
 
-const notion = new NotionClient({
-  auth: process.env.NOTION_TOKEN,
-});
+const NOTION_TOKEN =
+  process.env.NOTION_TOKEN ||
+  process.env.NOTION_SECRET ||
+  "";
+const DB_ID =
+  process.env.NOTION_DB_ID ||
+  process.env.NOTION_DATABASE_ID ||
+  "";
 
-const DB_ID = process.env.NOTION_DB_ID;
-
-// helpers
 function getFormulaString(prop) {
   if (!prop) return "";
   if (prop.type === "formula" && prop.formula.type === "string") {
@@ -41,9 +43,16 @@ function getStatusName(prop) {
 }
 
 export default async function handler(req, res) {
-  if (!DB_ID || !process.env.NOTION_TOKEN) {
-    return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DB_ID" });
+  // igual que en filters: si no hay credenciales, devolvemos posts vacíos
+  if (!NOTION_TOKEN || !DB_ID) {
+    return res.status(200).json({
+      ok: true,
+      warning: "NOTION_TOKEN or NOTION_DB_ID not found in env. Returning empty posts.",
+      posts: [],
+    });
   }
+
+  const notion = new NotionClient({ auth: NOTION_TOKEN });
 
   const {
     client = "all",
@@ -57,7 +66,6 @@ export default async function handler(req, res) {
     const pages = [];
     let cursor = undefined;
 
-    // 1. Traemos TODO lo visible
     do {
       const response = await notion.databases.query({
         database_id: DB_ID,
@@ -82,7 +90,7 @@ export default async function handler(req, res) {
         sorts: [
           { property: "Pinned", direction: "descending" },
           { property: "Publish Date", direction: "descending" },
-          { property: "Last edited time", direction: "descending" },
+          { timestamp: "last_edited_time", direction: "descending" },
         ],
       });
 
@@ -90,7 +98,6 @@ export default async function handler(req, res) {
       cursor = response.has_more ? response.next_cursor : undefined;
     } while (cursor);
 
-    // 2. Normalizamos y filtramos en memoria
     const items = pages
       .map((page) => {
         const p = page.properties || {};
@@ -106,11 +113,12 @@ export default async function handler(req, res) {
         const ownerName = getPeopleName(p["Owner"]);
         const statusName = getStatusName(p["Status"]);
 
-        // attachments
         const attachments = (p["Attachment"]?.files || []).map((f) => ({
           url: f.external?.url || f.file?.url || "",
           name: f.name || "",
         }));
+
+        const publishDate = p["Publish Date"]?.date?.start || null;
 
         return {
           id: page.id,
@@ -120,22 +128,16 @@ export default async function handler(req, res) {
           platforms,
           ownerName,
           statusName,
+          publishDate,
           attachments,
-          raw: p,
         };
       })
       .filter((item) => {
-        // CLIENT
         if (client !== "all" && item.clientName !== client) return false;
-        // PROJECT
         if (project !== "all" && item.projectName !== project) return false;
-        // PLATFORM
         if (platform !== "all" && !item.platforms.includes(platform)) return false;
-        // OWNER
         if (owner !== "all" && item.ownerName !== owner) return false;
-        // STATUS
         if (status !== "all" && item.statusName !== status) return false;
-
         return true;
       });
 
