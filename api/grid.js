@@ -1,10 +1,9 @@
-import { notion, DB, err, clamp } from "./_notion.js";
-import { detectContentSchema, } from "./schema.js";
+import { notion, DB, err, clamp, getDbMeta } from "./_notion.js";
+import { detectContentSchema } from "./schema.js";
 
-// Detectar si archivo es imagen o video por extensión simple
 function guessTypeFromUrl(url=""){
   const u = url.toLowerCase();
-  if(/\.(mp4|mov|webm|m4v)\b/.test(u)) return 'video';
+  if (/\.(mp4|mov|webm|m4v)\b/.test(u)) return 'video';
   return 'image';
 }
 
@@ -16,25 +15,37 @@ export default async function handler(req, res){
   const start = req.query.cursor || undefined;
 
   const selected = {
-    clients: [].concat(req.query.client||[]),
-    projects:[].concat(req.query.project||[]),
-    platforms:[].concat(req.query.platform||[]),
-    owners:  [].concat(req.query.owner||[]),   // deben venir IDs!
-    statuses:[].concat(req.query.status||[])
+    clients:  [].concat(req.query.client  || []),
+    projects: [].concat(req.query.project || []),
+    platforms:[].concat(req.query.platform|| []),
+    owners:   [].concat(req.query.owner   || []),  // IDs
+    statuses: [].concat(req.query.status  || [])
   };
 
+  // 1) Detectar llaves de propiedades
   const schema = await detectContentSchema(DB.content);
   if(!schema) return err(res,500,'Cannot read Content DB schema');
 
+  // 2) Leer tipos reales de propiedades (status/select, multi_select, people, relation)
+  const meta = await getDbMeta(DB.content);
+  if(!meta) return err(res,500,'Cannot read Content DB meta');
+
+  const types = {
+    status:   schema.statusKey   ? meta.properties[schema.statusKey]?.type   : null,      // 'status' o 'select'
+    platform: schema.platformKey ? meta.properties[schema.platformKey]?.type : null,      // 'multi_select' o 'select'
+    owner:    schema.ownerKey    ? meta.properties[schema.ownerKey]?.type    : null,      // 'people'
+    client:   schema.clientKey   ? meta.properties[schema.clientKey]?.type   : null,      // 'relation'
+    project:  schema.projectKey  ? meta.properties[schema.projectKey]?.type  : null       // 'relation'
+  };
+
+  // 3) Construir filtros seguros
   const filters = [];
 
-  // Ocultar si existen
   if(schema.hideKey){
-    filters.push({ property: schema.hideKey, checkbox: { equals:false }});
+    filters.push({ property: schema.hideKey, checkbox: { equals:false } });
   }
 
-  // CLIENTS (relation contains)
-  if(selected.clients.length && schema.clientKey){
+  if (selected.clients.length && schema.clientKey && types.client === 'relation'){
     filters.push({
       or: selected.clients.map(id => ({
         property: schema.clientKey, relation: { contains: id }
@@ -42,8 +53,7 @@ export default async function handler(req, res){
     });
   }
 
-  // PROJECTS (relation contains)
-  if(selected.projects.length && schema.projectKey){
+  if (selected.projects.length && schema.projectKey && types.project === 'relation'){
     filters.push({
       or: selected.projects.map(id => ({
         property: schema.projectKey, relation: { contains: id }
@@ -51,31 +61,37 @@ export default async function handler(req, res){
     });
   }
 
-  // PLATFORMS (multi-select contains)
-  if(selected.platforms.length && schema.platformKey){
-    const type = 'multi_select';
-    filters.push({
-      or: selected.platforms.map(v => ({
-        property: schema.platformKey, [type]: { contains: v }
-      }))
-    });
+  if (selected.platforms.length && schema.platformKey){
+    if (types.platform === 'multi_select'){
+      filters.push({
+        or: selected.platforms.map(v => ({
+          property: schema.platformKey, multi_select: { contains: v }
+        }))
+      });
+    } else if (types.platform === 'select'){
+      filters.push({
+        or: selected.platforms.map(v => ({
+          property: schema.platformKey, select: { equals: v }
+        }))
+      });
+    }
   }
 
-  // OWNERS (people contains — IDs)
-  if(selected.owners.length && schema.ownerKey){
+  if (selected.owners.length && schema.ownerKey && types.owner === 'people'){
     filters.push({
       or: selected.owners.map(id => ({
-        property: schema.ownerKey, people: { contains: id }
+        property: schema.ownerKey, people: { contains: id } // ¡IDs, no nombres!
       }))
     });
   }
 
-  // STATUS (single)
-  if(selected.statuses.length && schema.statusKey){
+  if (selected.statuses.length && schema.statusKey){
     const v = selected.statuses[0];
-    const p = {}; p[schema.statusKey] = { equals: v }; // para select/status Notion usa status.select/equals internamente
-    // Usar forma genérica soportada por SDK:
-    filters.push({ property: schema.statusKey, status: { equals: v }});
+    if (types.status === 'status'){
+      filters.push({ property: schema.statusKey, status: { equals: v } });
+    } else if (types.status === 'select'){
+      filters.push({ property: schema.statusKey, select: { equals: v } });
+    }
   }
 
   const query = {
@@ -85,7 +101,8 @@ export default async function handler(req, res){
     filter: filters.length ? { and: filters } : undefined,
     sorts: [
       ...(schema.pinnedKey ? [{ property: schema.pinnedKey, direction:'descending' }] : []),
-      ...(schema.dateKey   ? [{ property: schema.dateKey,   direction:'descending' }] : [{ timestamp:'created_time', direction:'descending' }])
+      ...(schema.dateKey   ? [{ property: schema.dateKey,   direction:'descending' }] :
+                             [{ timestamp:'created_time', direction:'descending' }])
     ]
   };
 
@@ -93,34 +110,34 @@ export default async function handler(req, res){
   try{
     resp = await notion.databases.query(query);
   }catch(e){
-    return err(res,400, e.message || 'Notion query failed');
+    // expón el mensaje para depurar durante pruebas
+    return err(res, 400, `Notion query failed: ${e.message||e}`);
   }
 
-  // Mapear resultados
   const posts = resp.results.map(pg => {
     const p = pg.properties;
-
-    const title = (p[schema.titleKey]?.title || []).map(r=>r.plain_text).join('').trim() || 'Untitled';
+    const title = (p[schema.titleKey]?.title||[]).map(r=>r.plain_text).join('').trim() || 'Untitled';
     const date  = p[schema.dateKey]?.date?.start || pg.created_time;
-    const owner = (p[schema.ownerKey]?.people || [])[0]?.name || null;
-    const platforms = (p[schema.platformKey]?.multi_select || p[schema.platformKey]?.select ? (p[schema.platformKey]?.multi_select||[]).map(o=>o.name) : []);
+    const owner = (p[schema.ownerKey]?.people||[])[0]?.name || null;
+
+    let platforms = [];
+    const plat = p[schema.platformKey];
+    if (plat?.type === 'multi_select') platforms = (plat.multi_select||[]).map(o=>o.name);
+    if (plat?.type === 'select' && plat.select) platforms = [plat.select.name];
+
     const pinned = !!(p[schema.pinnedKey]?.checkbox);
 
-    // copy
     let copy = '';
     const cprop = p[schema.copyKey];
     if(cprop?.type==='rich_text') copy = (cprop.rich_text||[]).map(r=>r.plain_text).join('').trim();
 
-    // assets (unión de todas las fileKeys detectadas)
     const media = [];
     (schema.fileKeys||[]).forEach(k=>{
       const fp = p[k];
       if(fp?.type==='files' && Array.isArray(fp.files)){
         fp.files.forEach(f=>{
           const url = f.file?.url || f.external?.url || '';
-          if(url){
-            media.push({ type: guessTypeFromUrl(url), url });
-          }
+          if(url) media.push({ type: guessTypeFromUrl(url), url });
         });
       }
     });
@@ -128,9 +145,5 @@ export default async function handler(req, res){
     return { id: pg.id, title, date, owner, platforms, pinned, copy, media };
   });
 
-  return res.status(200).json({
-    ok:true,
-    posts,
-    next_cursor: resp.has_more ? resp.next_cursor : null
-  });
+  return res.status(200).json({ ok:true, posts, next_cursor: resp.has_more ? resp.next_cursor : null });
 }
