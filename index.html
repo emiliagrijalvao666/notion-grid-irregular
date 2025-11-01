@@ -4,7 +4,8 @@
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>IG Grid</title>
-  <link rel="stylesheet" href="./styles.css?v=8"/>
+  <!-- cache-bust -->
+  <link rel="stylesheet" href="./styles.css?v=9"/>
 </head>
 <body>
   <div id="app" class="wrap">
@@ -20,21 +21,42 @@
     </div>
 
     <div class="filters" id="filters">
-      <div class="select"><button class="select__btn" id="fClient">All Clients</button><div class="select__menu" id="mClient"></div></div>
-      <div class="select"><button class="select__btn" id="fProject">All Projects</button><div class="select__menu" id="mProject"></div></div>
-      <div class="select"><button class="select__btn" id="fPlatform">All Platforms</button><div class="select__menu" id="mPlatform"></div></div>
-      <div class="select"><button class="select__btn" id="fOwner">All Owners</button><div class="select__menu" id="mOwner"></div></div>
-      <div class="select"><button class="select__btn" id="fStatus">All Status</button><div class="select__menu" id="mStatus"></div></div>
+      <div class="select">
+        <button class="select__btn" id="fClient" aria-haspopup="listbox" aria-expanded="false">All Clients</button>
+        <div class="select__menu" id="mClient" role="listbox" aria-labelledby="fClient"></div>
+      </div>
+
+      <div class="select">
+        <button class="select__btn" id="fProject" aria-haspopup="listbox" aria-expanded="false">All Projects</button>
+        <div class="select__menu" id="mProject" role="listbox" aria-labelledby="fProject"></div>
+      </div>
+
+      <div class="select">
+        <button class="select__btn" id="fPlatform" aria-haspopup="listbox" aria-expanded="false">All Platforms</button>
+        <div class="select__menu" id="mPlatform" role="listbox" aria-labelledby="fPlatform"></div>
+      </div>
+
+      <div class="select">
+        <button class="select__btn" id="fOwner" aria-haspopup="listbox" aria-expanded="false">All Owners</button>
+        <div class="select__menu" id="mOwner" role="listbox" aria-labelledby="fOwner"></div>
+      </div>
+
+      <div class="select">
+        <button class="select__btn" id="fStatus" aria-haspopup="listbox" aria-expanded="false">All Status</button>
+        <div class="select__menu" id="mStatus" role="listbox" aria-labelledby="fStatus"></div>
+      </div>
     </div>
 
     <div id="grid" class="grid"></div>
 
-    <div class="more"><button id="btnMore" class="btn btn--more">Load more</button></div>
+    <div class="more">
+      <button id="btnMore" class="btn btn--more">Load more</button>
+    </div>
   </div>
 
   <!-- overlay & toasts -->
-  <div id="overlay" hidden></div>
-  <div id="toasts" aria-live="polite" aria-atomic="true"></div>
+  <div id="overlay" hidden aria-hidden="true"></div>
+  <div id="toasts" aria-live="polite" role="status" aria-atomic="true"></div>
 
   <!-- Modal -->
   <div id="modal" class="modal" aria-hidden="true">
@@ -53,6 +75,7 @@
     </div>
   </div>
 
-  <script type="module" src="./index.js?v=8"></script>
+  <!-- cache-bust -->
+  <script type="module" src="./index.js?v=9"></script>
 </body>
 </html>
