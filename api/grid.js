@@ -1,68 +1,119 @@
-// /api/grid.js
-import { notion, getDbMeta, resolveProps, hasProp, pickProp } from './_notion.js';
-import { SCHEMA } from './schema.js';
+import { notion, DB_IDS } from "./_notion.js";
+import {
+  PROP, getExistingKey, getTitleFromPage,
+  toMedia, toOwners, toPlatforms, toCheckbox,
+  toRelationIds, toFormulaText, toDate, toStatusName
+} from "./schema.js";
 
 export default async function handler(req, res){
-  try{
-    if(req.method!=='GET') return res.status(405).json({ ok:false, error:'Method not allowed' });
+  try {
+    if (req.method !== "GET") return res.status(405).json({ ok:false, error:"Method not allowed" });
+    if (!DB_IDS.posts) return res.status(400).json({ ok:false, error:"Missing NOTION_DATABASE_ID" });
 
-    const dbId = SCHEMA.POSTS_DB_ID;
-    if(!process.env.NOTION_TOKEN || !dbId)
-      return res.status(400).json({ ok:false, error:'Missing NOTION_TOKEN or NOTION_DATABASE_ID' });
+    // Query params
+    const qs = new URL(req.url, "https://x").searchParams;
+    const pageSize = Math.min(parseInt(qs.get("pageSize") || "12", 10), 50);
+    const cursor   = qs.get("cursor") || undefined;
+    const clients  = qs.getAll("client");
+    const projects = qs.getAll("project");
+    const platforms= qs.getAll("platform");
+    const owners   = qs.getAll("owner");   // IDs
+    const statuses = qs.getAll("status");  // single en UI, array safe aquí
 
-    const meta = await getDbMeta(dbId);
-    const P = resolveProps(meta); // ← propiedades efectivas (Client, Project name, etc.)
+    // Meta para saber qué props existen
+    const meta = await notion.databases.retrieve({ database_id: DB_IDS.posts }).catch(()=>null);
 
-    const {
-      pageSize='12', cursor,
-      client:clientIds, project:projectIds, platform:platforms,
-      owner:ownerIds, status:statuses
-    } = req.query;
+    const ownersKey      = meta?.properties?.[PROP.owners] ? PROP.owners : null;
+    const platformKey    = getExistingKey(meta, PROP.platformCandidates);
+    const clientRelKey   = getExistingKey(meta, PROP.clientRelCandidates);
+    const projectRelKey  = getExistingKey(meta, PROP.projectRelCandidates);
+    const hasHide        = !!meta?.properties?.[PROP.hide];
+    const hasArchived    = !!meta?.properties?.[PROP.archived];
+    const hasPinned      = !!meta?.properties?.[PROP.pinned];
+    const hasDate        = !!meta?.properties?.[PROP.date];
+    const hasStatus      = !!meta?.properties?.[PROP.status];
 
-    const AND = [];
-    if(P.hide)     AND.push({ property:P.hide, checkbox:{ equals:false } });
-    if(P.archived) AND.push({ property:P.archived, checkbox:{ equals:false } });
-
-    const arr = v => v ? (Array.isArray(v)?v:[v]) : [];
-
-    if(P.clients && arr(clientIds).length)
-      AND.push({ or: arr(clientIds).map(id=>({ property:P.clients, relation:{ contains:id } })) });
-
-    if(P.projects && arr(projectIds).length)
-      AND.push({ or: arr(projectIds).map(id=>({ property:P.projects, relation:{ contains:id } })) });
-
-    if(P.platform && arr(platforms).length)
-      AND.push({ or: arr(platforms).map(v=>({ property:P.platform, select:{ equals:v } })) });
-
-    if(P.owners && arr(ownerIds).length)
-      AND.push({ or: arr(ownerIds).map(id=>({ property:P.owners, people:{ contains:id } })) }); // UUID
-
-    if(P.status && arr(statuses).length)
-      AND.push({ or: arr(statuses).map(v=>({ property:P.status, status:{ equals:v } })) });
+    // Filtros base
+    const and = [];
+    if (hasHide){
+      and.push({ or:[
+        { property: PROP.hide, checkbox:{ equals:false } },
+        { property: PROP.hide, checkbox:{ does_not_equal:true } },
+      ]});
+    }
+    if (hasArchived){
+      and.push({ or:[
+        { property: PROP.archived, checkbox:{ equals:false } },
+        { property: PROP.archived, checkbox:{ does_not_equal:true } },
+      ]});
+    }
+    if (clients.length && clientRelKey){
+      and.push({ or: clients.map(id => ({ property: clientRelKey, relation:{ contains:id } })) });
+    }
+    if (projects.length && projectRelKey){
+      and.push({ or: projects.map(id => ({ property: projectRelKey, relation:{ contains:id } })) });
+    }
+    if (platforms.length && platformKey){
+      and.push({ or: platforms.map(name => ({ property: platformKey, multi_select:{ contains:name } })) });
+    }
+    if (owners.length && ownersKey){
+      and.push({ or: owners.map(id => ({ property: ownersKey, people:{ contains:id } })) });
+    }
+    if (statuses.length && hasStatus){
+      and.push({ or: statuses.map(name => ({ property: PROP.status, status:{ equals:name } })) });
+    }
 
     const sorts = [];
-    if(P.pinned) sorts.push({ property:P.pinned, direction:'descending' });
-    if(P.date)   sorts.push({ property:P.date,   direction:'descending' });
+    if (hasPinned) sorts.push({ property: PROP.pinned, direction:"descending" });
+    if (hasDate)   sorts.push({ property: PROP.date,   direction:"descending" });
+    sorts.push({ timestamp:"created_time", direction:"descending" });
 
-    const q = await notion.databases.query({
-      database_id: dbId,
-      page_size: Number(pageSize),
-      start_cursor: cursor || undefined,
-      filter: AND.length ? { and: AND } : undefined,
-      sorts: sorts.length ? sorts : undefined
+    const query = {
+      database_id: DB_IDS.posts,
+      page_size: pageSize,
+      start_cursor: cursor,
+      filter: and.length ? { and } : undefined,
+      sorts
+    };
+
+    const resp = await notion.databases.query(query);
+
+    const posts = resp.results.map(p=>{
+      const media = toMedia(p);
+      const title = getTitleFromPage(p);
+      const date  = toDate(p);
+      const statusName = toStatusName(p);
+      const ownersArr  = toOwners(p, ownersKey);
+      const platformsArr = toPlatforms(p, platformKey);
+      const pinned = toCheckbox(p, PROP.pinned);
+
+      const clientIds = toRelationIds(p, clientRelKey);
+      const projectIds= toRelationIds(p, projectRelKey);
+      const clientNameFx  = toFormulaText(p, PROP.clientNameFx);
+      const projectNameFx = toFormulaText(p, PROP.projectNameFx);
+
+      const copy = p.properties?.Copy?.rich_text?.map(r=>r.plain_text).join("") || "";
+
+      return {
+        id: p.id,
+        title,
+        date,
+        pinned,
+        status: statusName,
+        owners: ownersArr,
+        platforms: platformsArr,
+        media,
+        clientIds,
+        projectIds,
+        clientName: clientNameFx || null,
+        projectName: projectNameFx || null,
+        copy
+      };
     });
 
-    const posts = q.results.map(pg=>{
-      const title = P.title ? pickProp.title(pg, P.title) : 'Untitled';
-      const date  = P.date  ? pickProp.date(pg, P.date)   : null;
-      const pinned = P.pinned ? pickProp.checkbox(pg, P.pinned) : false;
-      const media = pickProp.filesAll(pg, P.files||[]);
-      return { id:pg.id, title, date, pinned, media };
-    });
+    return res.json({ ok:true, next_cursor: resp.has_more ? resp.next_cursor : null, posts });
 
-    res.status(200).json({ ok:true, posts, next_cursor: q.has_more ? q.next_cursor : null });
-  }catch(err){
-    console.error(err);
-    res.status(500).json({ ok:false, error:String(err?.message||err) });
+  } catch (e) {
+    return res.status(500).json({ ok:false, error:e.message || "grid error" });
   }
 }
