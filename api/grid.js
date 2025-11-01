@@ -11,7 +11,178 @@ export default async function handler(req, res) {
 
   if (!NOTION_TOKEN || !NOTION_DB_ID) {
     return res.status(500).json({
+      ok: false,xa// /api/grid.js
+import { Client as NotionClient } from "@notionhq/client";
+
+export default async function handler(req, res) {
+  const token = process.env.NOTION_TOKEN;
+  const contentDB = process.env.NOTION_DATABASE_ID;
+
+  if (!token || !contentDB) {
+    return res.status(500).json({
       ok: false,
+      error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID",
+    });
+  }
+
+  const notion = new NotionClient({ auth: token });
+
+  const {
+    client = "all",
+    project = "all",
+    platform = "All Platforms",
+    owner = "all",
+    status = "All Status",
+  } = req.query;
+
+  const filters = [];
+
+  // 1. NO mostrar si Hide = true
+  filters.push({
+    or: [
+      {
+        property: "Hide",
+        checkbox: { equals: false },
+      },
+      {
+        property: "Hide",
+        checkbox: { is_empty: true },
+      },
+    ],
+  });
+
+  // 2. NO mostrar si Archivado = true
+  filters.push({
+    or: [
+      {
+        property: "Archivado",
+        checkbox: { equals: false },
+      },
+      {
+        property: "Archivado",
+        checkbox: { is_empty: true },
+      },
+    ],
+  });
+
+  // 3. Client
+  if (client && client !== "all" && client !== "All Clients") {
+    filters.push({
+      property: "Client",
+      relation: {
+        contains: client,
+      },
+    });
+  }
+
+  // 4. Project
+  if (project && project !== "all" && project !== "All Projects") {
+    filters.push({
+      property: "Project",
+      relation: {
+        contains: project,
+      },
+    });
+  }
+
+  // 5. Platform
+  if (platform && platform !== "All Platforms") {
+    filters.push({
+      property: "Platform",
+      multi_select: {
+        contains: platform,
+      },
+    });
+  }
+
+  // 6. Owner
+  if (owner && owner !== "all" && owner !== "All Owners") {
+    // aquí usamos el ID de la persona, no el nombre
+    filters.push({
+      property: "Owner",
+      people: {
+        contains: owner,
+      },
+    });
+  }
+
+  // 7. Status
+  if (status && status !== "All Status") {
+    filters.push({
+      property: "Status",
+      status: {
+        equals: status,
+      },
+    });
+  }
+
+  try {
+    const resp = await notion.databases.query({
+      database_id: contentDB,
+      filter: {
+        and: filters,
+      },
+      sorts: [
+        {
+          property: "Publish Date",
+          direction: "descending",
+        },
+      ],
+      page_size: 100,
+    });
+
+    const posts = resp.results.map((page) => {
+      const props = page.properties || {};
+
+      // título
+      let title = "Untitled";
+      const titleProp =
+        props.Post ||
+        props.Title ||
+        props.Name ||
+        props["Post"] ||
+        props["Posts"];
+      if (titleProp && titleProp.type === "title") {
+        title =
+          (titleProp.title[0] && titleProp.title[0].plain_text) ||
+          "Untitled";
+      }
+
+      // fecha
+      let date = "";
+      const dateProp = props["Publish Date"] || props.Date;
+      if (dateProp && dateProp.date && dateProp.date.start) {
+        date = dateProp.date.start;
+      }
+
+      // imagen
+      let image = null;
+      if (props.Attachment && props.Attachment.type === "files") {
+        const f = props.Attachment.files[0];
+        if (f) {
+          image = f.external ? f.external.url : f.file.url;
+        }
+      }
+
+      return {
+        id: page.id,
+        title,
+        date,
+        image,
+      };
+    });
+
+    return res.status(200).json({
+      ok: true,
+      posts,
+    });
+  } catch (err) {
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+    });
+  }
+}
       error: "Missing NOTION_TOKEN or NOTION_DB_ID",
     });
   }
