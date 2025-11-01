@@ -18,7 +18,6 @@ const els = {
   fPlatform: document.getElementById('fPlatform'),
   fOwner: document.getElementById('fOwner'),
   fStatus: document.getElementById('fStatus'),
-
   mClient: document.getElementById('mClient'),
   mProject: document.getElementById('mProject'),
   mPlatform: document.getElementById('mPlatform'),
@@ -44,19 +43,7 @@ const state = {
   loading: false,
   modal: { open:false, assets:[], index:0, lastFocus:null },
 };
-
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
-
-/* ----- Init guards (evita UI muerta) ----- */
-(function guardRequired(){
-  const required = [
-    'grid','btnMore','btnRefresh','btnClear','badgeCount','overlay','toasts','filters',
-    'fClient','fProject','fPlatform','fOwner','fStatus','mClient','mProject','mPlatform','mOwner','mStatus',
-    'modal','modalBackdrop','modalClose','vStage','vPrev','vNext','vDots','vCopy'
-  ];
-  const missing = required.filter(id => !document.getElementById(id));
-  if (missing.length){ console.error('Faltan elementos en HTML:', missing); }
-})();
 
 /* ===== Boot ===== */
 init();
@@ -106,12 +93,12 @@ async function loadFilters(){
 
     state.filtersData = normalizeFilters(json);
 
-    // ⚠️ Etiqueta SIEMPRE con .name; valor con .id (o string)
-    renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id,    {multi:true,  searchable:true});
-    renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id,    {multi:true,  searchable:true});
-    renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,       {multi:true,  searchable:true});
-    renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id,    {multi:true,  searchable:true, initials:true});
-    renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name,  {multi:false, searchable:true});
+    // Nota: owners -> value = id (para people.contains)
+    renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true,  searchable:true});
+    renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true,  searchable:true});
+    renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true,  searchable:true});
+    renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id, {multi:true,  searchable:true, initials:true});
+    renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name, {multi:false, searchable:true});
 
     setBtnText(els.fClient, "All Clients");
     setBtnText(els.fProject, "All Projects");
@@ -126,41 +113,12 @@ async function loadFilters(){
   }
 }
 
-/* —— Normaliza respuesta de /api/filters para evitar UUID como label —— */
 function normalizeFilters(json){
-  const cleanName = (raw, fallback='Untitled')=>{
-    if (!raw) return fallback;
-    const s = String(raw).trim();
-    // si parece UUID (contiene 3+ guiones), ignóralo como nombre visible
-    const isUuidish = (s.match(/-/g)||[]).length >= 3;
-    return isUuidish ? fallback : s;
-  };
-
-  const clients   = (json.clients||[]).map(c => ({
-    id: c.id || c.value || c.name,
-    name: cleanName(c.name)
-  }));
-
-  const projects  = (json.projects||[]).map(p => ({
-    id: p.id || p.value || p.name,
-    name: cleanName(p.name),
-    clientIds: Array.isArray(p.clientIds) ? p.clientIds : []
-  }));
-
-  const platforms = (json.platforms||[])
-    .map(p => (typeof p==='string' ? p : (p.name||'')))
-    .filter(Boolean);
-
-  // owners deben usar ID (people.contains) pero mostrar nombre
-  const owners    = (json.owners||[]).map(o => ({
-    id: o.id || o.value,
-    name: cleanName(o.name, 'Unknown')
-  }));
-
-  const statuses  = (json.statuses||[])
-    .map(s => ({ name: cleanName(s.name) }))
-    .filter(s=>s.name);
-
+  const clients   = (json.clients||[]).map(c => ({ id:c.id||c.value||c.name, name:c.name||String(c.value||c.id||'')||'Untitled' }));
+  const projects  = (json.projects||[]).map(p => ({ id:p.id||p.value||p.name, name:p.name||String(p.value||p.id||'')||'Untitled', clientIds:Array.isArray(p.clientIds)?p.clientIds:[] }));
+  const platforms = (json.platforms||[]).map(p => typeof p==='string' ? p : (p.name||'')).filter(Boolean);
+  const owners    = (json.owners||[]).map(o => ({ id:o.id||o.value, name:o.name||String(o.value||'')||'Unknown' }));
+  const statuses  = (json.statuses||[]).map(s => ({ name:s.name||String(s.value||'') })).filter(s=>s.name);
   return { clients, projects, platforms, owners, statuses };
 }
 
@@ -416,6 +374,7 @@ function renderCard(p){
 
   const date = p.date ? fmtDate(p.date) : '';
 
+  // **NO mostramos copy en la card** (solo en el modal)
   return `
     <div class="card" data-id="${p.id}">
       ${ownerBadge}
@@ -492,6 +451,7 @@ function openModal(id){
   state.modal.index = 0;
   state.modal.lastFocus = document.activeElement;
 
+  // Copy solo aquí
   const copy = (post.copy||'').trim();
   els.vCopy.textContent = copy;
   els.vCopy.hidden = !copy;
