@@ -1,62 +1,40 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
   <title>IG Grid</title>
-  <link rel="stylesheet" href="./styles.css" />
+  <link rel="stylesheet" href="./styles.css?v=8"/>
 </head>
 <body>
   <div id="app" class="wrap">
-
     <div class="toolbar">
-      <div class="toolbar__left">
+      <div class="left">
         <button id="btnRefresh" class="btn btn--refresh">Refresh</button>
       </div>
-
-      <div class="filters" id="filters">
-        <div class="select">
-          <button class="select__btn" id="fClient" aria-expanded="false">All Clients</button>
-          <div class="select__menu" id="mClient"></div>
-        </div>
-        <div class="select">
-          <button class="select__btn" id="fProject" aria-expanded="false">All Projects</button>
-          <div class="select__menu" id="mProject"></div>
-        </div>
-        <div class="select">
-          <button class="select__btn" id="fPlatform" aria-expanded="false">All Platforms</button>
-          <div class="select__menu" id="mPlatform"></div>
-        </div>
-        <div class="select">
-          <button class="select__btn" id="fOwner" aria-expanded="false">All Owners</button>
-          <div class="select__menu" id="mOwner"></div>
-        </div>
-        <div class="select">
-          <button class="select__btn" id="fStatus" aria-expanded="false">All Status</button>
-          <div class="select__menu" id="mStatus"></div>
-        </div>
-      </div>
-
-      <div class="toolbar__right">
+      <div class="right">
         <button id="btnClear" class="btn btn--ghost">
           Clear filters <span id="badgeCount" class="badge" hidden>0</span>
         </button>
       </div>
     </div>
 
-    <!-- GRID -->
-    <div id="grid" class="grid"></div>
-
-    <!-- MORE -->
-    <div class="more">
-      <button id="btnMore" class="btn btn--more">Load more</button>
+    <div class="filters" id="filters">
+      <div class="select"><button class="select__btn" id="fClient">All Clients</button><div class="select__menu" id="mClient"></div></div>
+      <div class="select"><button class="select__btn" id="fProject">All Projects</button><div class="select__menu" id="mProject"></div></div>
+      <div class="select"><button class="select__btn" id="fPlatform">All Platforms</button><div class="select__menu" id="mPlatform"></div></div>
+      <div class="select"><button class="select__btn" id="fOwner">All Owners</button><div class="select__menu" id="mOwner"></div></div>
+      <div class="select"><button class="select__btn" id="fStatus">All Status</button><div class="select__menu" id="mStatus"></div></div>
     </div>
 
+    <div id="grid" class="grid"></div>
+
+    <div class="more"><button id="btnMore" class="btn btn--more">Load more</button></div>
   </div>
 
-  <!-- Overlay de carga y toasts (evita que el JS se rompa si faltan) -->
-  <div id="overlay" class="overlay" hidden></div>
-  <div id="toasts" class="toasts"></div>
+  <!-- overlay & toasts -->
+  <div id="overlay" hidden></div>
+  <div id="toasts" aria-live="polite" aria-atomic="true"></div>
 
   <!-- Modal -->
   <div id="modal" class="modal" aria-hidden="true">
@@ -75,6 +53,6 @@
     </div>
   </div>
 
-  <script type="module" src="/index.js"></script>
+  <script type="module" src="./index.js?v=8"></script>
 </body>
 </html>
