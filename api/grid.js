@@ -1,157 +1,136 @@
-// /api/grid.js
-import { Client } from "@notionhq/client";
-import * as nd from "./_notion.js";
+import { notion, DB, err, clamp } from "./_notion.js";
+import { detectContentSchema, } from "./schema.js";
 
-const notion = nd.notion || nd.default || new Client({ auth: process.env.NOTION_TOKEN });
-const DB_ID  = process.env.NOTION_DATABASE_ID;
-
-/* ---------- helpers de propiedades ---------- */
-function firstKeyByType(props, type, prefer = []) {
-  for (const name of prefer) if (props[name]?.type === type) return name;
-  for (const [k, v] of Object.entries(props)) if (v?.type === type) return k;
-  return null;
-}
-function anyKeysByType(props, type) {
-  return Object.entries(props)
-    .filter(([, v]) => v?.type === type)
-    .map(([k]) => k);
-}
-const isVideo = (url = "") => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
-const text = rich => (Array.isArray(rich) ? rich.map(t => t?.plain_text || "").join("") : "") || "";
-
-/* ---------- filtros dinámicos ---------- */
-function buildFilter(params, props) {
-  const and = [];
-
-  // Hide/Archived checkboxes si existen
-  const hideProp = Object.keys(props).find(k => props[k]?.type === "checkbox" && /hide|hidden/i.test(k));
-  const archProp = Object.keys(props).find(k => props[k]?.type === "checkbox" && /archiv/i.test(k));
-  if (hideProp) and.push({ property: hideProp, checkbox: { equals: false } });
-  if (archProp) and.push({ property: archProp, checkbox: { equals: false } });
-
-  // Clients (relation)
-  const clientProp = firstKeyByType(props, "relation", ["Client", "PostClient"]);
-  const clients = params.getAll("client").concat(params.getAll("clientId"));
-  if (clientProp && clients.length) {
-    and.push({ or: clients.map(id => ({ property: clientProp, relation: { contains: id } })) });
-  }
-
-  // Projects (relation)
-  const projectProp = firstKeyByType(props, "relation", ["Project", "PostProject"]);
-  const projects = params.getAll("project").concat(params.getAll("projectId"));
-  if (projectProp && projects.length) {
-    and.push({ or: projects.map(id => ({ property: projectProp, relation: { contains: id } })) });
-  }
-
-  // Platforms (select o multi_select)
-  const platformProp =
-    firstKeyByType(props, "select", ["Platform", "Platforms"]) ||
-    firstKeyByType(props, "multi_select", ["Platforms", "Platform"]);
-  const platforms = params.getAll("platform").concat(params.getAll("platforms"));
-  if (platformProp && platforms.length) {
-    const t = props[platformProp]?.type;
-    if (t === "select") {
-      and.push({ or: platforms.map(v => ({ property: platformProp, select: { equals: v } })) });
-    } else if (t === "multi_select") {
-      and.push({ or: platforms.map(v => ({ property: platformProp, multi_select: { contains: v } })) });
-    }
-  }
-
-  // Status (select)
-  const statusProp = firstKeyByType(props, "select", ["Status", "Estado"]);
-  const statuses   = params.getAll("status").concat(params.getAll("statuses"));
-  if (statusProp && statuses.length) {
-    and.push({ or: statuses.map(v => ({ property: statusProp, select: { equals: v } })) });
-  }
-
-  // Owners (people)
-  const ownersProp = firstKeyByType(props, "people", ["Owner", "Owners"]);
-  const owners     = params.getAll("owner").concat(params.getAll("ownerId"));
-  if (ownersProp && owners.length) {
-    and.push({ or: owners.map(id => ({ property: ownersProp, people: { contains: id } })) });
-  }
-
-  return and.length ? { and } : undefined;
+// Detectar si archivo es imagen o video por extensión simple
+function guessTypeFromUrl(url=""){
+  const u = url.toLowerCase();
+  if(/\.(mp4|mov|webm|m4v)\b/.test(u)) return 'video';
+  return 'image';
 }
 
-/* ---------- extracción de campos ---------- */
-function extractMediaFromPageProperties(p) {
-  // Junta TODOS los “files & media” que existan
-  const filesProps = Object.entries(p).filter(([, v]) => v?.type === "files");
-  const out = [];
-  for (const [, val] of filesProps) {
-    (val.files || []).forEach(item => {
-      const url = item?.file?.url || item?.external?.url || "";
-      if (!url) return;
-      out.push({ type: isVideo(url) ? "video" : "image", url });
+export default async function handler(req, res){
+  if(req.method !== 'GET') return err(res,405,'Method not allowed');
+  if(!DB.content) return err(res,500,'Missing CONTENT_DB_ID');
+
+  const pageSize = clamp(parseInt(req.query.pageSize||'12',10), 6, 24);
+  const start = req.query.cursor || undefined;
+
+  const selected = {
+    clients: [].concat(req.query.client||[]),
+    projects:[].concat(req.query.project||[]),
+    platforms:[].concat(req.query.platform||[]),
+    owners:  [].concat(req.query.owner||[]),   // deben venir IDs!
+    statuses:[].concat(req.query.status||[])
+  };
+
+  const schema = await detectContentSchema(DB.content);
+  if(!schema) return err(res,500,'Cannot read Content DB schema');
+
+  const filters = [];
+
+  // Ocultar si existen
+  if(schema.hideKey){
+    filters.push({ property: schema.hideKey, checkbox: { equals:false }});
+  }
+
+  // CLIENTS (relation contains)
+  if(selected.clients.length && schema.clientKey){
+    filters.push({
+      or: selected.clients.map(id => ({
+        property: schema.clientKey, relation: { contains: id }
+      }))
     });
   }
-  return out;
-}
 
-export default async function handler(req, res) {
-  try {
-    if (req.method !== "GET") {
-      res.status(405).json({ ok: false, error: "Method not allowed" });
-      return;
-    }
-
-    const { searchParams } = new URL(req.url, `http://${req.headers.host}`);
-    const pageSize = Math.min(Number(searchParams.get("pageSize") || 12), 50);
-    const cursor   = searchParams.get("cursor") || undefined;
-
-    const meta  = await notion.databases.retrieve({ database_id: DB_ID });
-    const props = meta.properties;
-
-    const filter = buildFilter(searchParams, props);
-
-    const titleProp = firstKeyByType(props, "title", ["Name", "Post Name"]);
-    const dateProp  = firstKeyByType(props, "date",  ["Publish Date","Date","Publish"]);
-
-    const sorts = dateProp
-      ? [{ property: dateProp, direction: "descending" }]
-      : [{ timestamp: "last_edited_time", direction: "descending" }];
-
-    const resp = await notion.databases.query({
-      database_id: DB_ID,
-      page_size: pageSize,
-      start_cursor: cursor,
-      filter,
-      sorts
+  // PROJECTS (relation contains)
+  if(selected.projects.length && schema.projectKey){
+    filters.push({
+      or: selected.projects.map(id => ({
+        property: schema.projectKey, relation: { contains: id }
+      }))
     });
-
-    const posts = resp.results.map(pg => {
-      const p = pg.properties;
-
-      const title =
-        (titleProp && text(p[titleProp]?.title || p[titleProp]?.rich_text)) ||
-        pg.id;
-
-      const date = dateProp
-        ? (p[dateProp]?.date?.start || p[dateProp]?.date?.end || null)
-        : null;
-
-      // pinned (checkbox opcional)
-      const pinKey = Object.keys(p).find(k => p[k]?.type === "checkbox" && /pin/i.test(k));
-      const pinned = pinKey ? !!p[pinKey]?.checkbox : false;
-
-      // copy (rich_text opcional)
-      const copyKey = Object.keys(p).find(k => p[k]?.type === "rich_text" && /copy|caption|texto/i.test(k));
-      const copy = copyKey ? text(p[copyKey]?.rich_text) : "";
-
-      const media = extractMediaFromPageProperties(p);
-
-      return { id: pg.id, title, date, pinned, copy, media };
-    });
-
-    res.status(200).json({
-      ok: true,
-      posts,
-      next_cursor: resp.has_more ? resp.next_cursor : null
-    });
-
-  } catch (err) {
-    console.error("grid error:", err);
-    res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
+
+  // PLATFORMS (multi-select contains)
+  if(selected.platforms.length && schema.platformKey){
+    const type = 'multi_select';
+    filters.push({
+      or: selected.platforms.map(v => ({
+        property: schema.platformKey, [type]: { contains: v }
+      }))
+    });
+  }
+
+  // OWNERS (people contains — IDs)
+  if(selected.owners.length && schema.ownerKey){
+    filters.push({
+      or: selected.owners.map(id => ({
+        property: schema.ownerKey, people: { contains: id }
+      }))
+    });
+  }
+
+  // STATUS (single)
+  if(selected.statuses.length && schema.statusKey){
+    const v = selected.statuses[0];
+    const p = {}; p[schema.statusKey] = { equals: v }; // para select/status Notion usa status.select/equals internamente
+    // Usar forma genérica soportada por SDK:
+    filters.push({ property: schema.statusKey, status: { equals: v }});
+  }
+
+  const query = {
+    database_id: DB.content,
+    page_size: pageSize,
+    start_cursor: start,
+    filter: filters.length ? { and: filters } : undefined,
+    sorts: [
+      ...(schema.pinnedKey ? [{ property: schema.pinnedKey, direction:'descending' }] : []),
+      ...(schema.dateKey   ? [{ property: schema.dateKey,   direction:'descending' }] : [{ timestamp:'created_time', direction:'descending' }])
+    ]
+  };
+
+  let resp;
+  try{
+    resp = await notion.databases.query(query);
+  }catch(e){
+    return err(res,400, e.message || 'Notion query failed');
+  }
+
+  // Mapear resultados
+  const posts = resp.results.map(pg => {
+    const p = pg.properties;
+
+    const title = (p[schema.titleKey]?.title || []).map(r=>r.plain_text).join('').trim() || 'Untitled';
+    const date  = p[schema.dateKey]?.date?.start || pg.created_time;
+    const owner = (p[schema.ownerKey]?.people || [])[0]?.name || null;
+    const platforms = (p[schema.platformKey]?.multi_select || p[schema.platformKey]?.select ? (p[schema.platformKey]?.multi_select||[]).map(o=>o.name) : []);
+    const pinned = !!(p[schema.pinnedKey]?.checkbox);
+
+    // copy
+    let copy = '';
+    const cprop = p[schema.copyKey];
+    if(cprop?.type==='rich_text') copy = (cprop.rich_text||[]).map(r=>r.plain_text).join('').trim();
+
+    // assets (unión de todas las fileKeys detectadas)
+    const media = [];
+    (schema.fileKeys||[]).forEach(k=>{
+      const fp = p[k];
+      if(fp?.type==='files' && Array.isArray(fp.files)){
+        fp.files.forEach(f=>{
+          const url = f.file?.url || f.external?.url || '';
+          if(url){
+            media.push({ type: guessTypeFromUrl(url), url });
+          }
+        });
+      }
+    });
+
+    return { id: pg.id, title, date, owner, platforms, pinned, copy, media };
+  });
+
+  return res.status(200).json({
+    ok:true,
+    posts,
+    next_cursor: resp.has_more ? resp.next_cursor : null
+  });
 }
