@@ -1,41 +1,18 @@
-const { Client } = require('@notionhq/client');
-
-function getDbId() {
-  return process.env.NOTION_DB_ID
-      || process.env.NOTION_DATABASE_ID
-      || process.env.NOTION_DB_CONTENT
-      || process.env.NOTION_DB;
-}
-
-module.exports = async (req, res) => {
+// /api/health.js
+export default async function handler(req, res) {
   const token = process.env.NOTION_TOKEN;
-  const db = getDbId();
-  const hasToken = !!token;
-  const hasDb = !!db;
+  const db =
+    process.env.NOTION_DB_ID ||
+    process.env.NOTION_DATABASE_ID ||
+    process.env.NOTION_DB_CONTENT;
 
-  // Intento mínimo de conexión si hay credenciales
-  let ok = false, errors = [];
-  if (hasToken && hasDb) {
-    try {
-      const notion = new Client({ auth: token });
-      await notion.databases.retrieve({ database_id: db });
-      ok = true;
-    } catch (e) {
-      ok = false;
-      errors.push(e.message || String(e));
-    }
-  }
-
-  res.setHeader('Content-Type', 'application/json');
-  res.status(200).send(JSON.stringify({
-    ok,
-    hasToken,
-    hasDb,
+  return res.status(200).json({
+    ok: !!(token && db),
+    hasToken: !!token,
+    hasDb: !!db,
     env: {
-      NOTION_TOKEN: hasToken ? 'present' : 'missing',
-      NOTION_DB_ID_or_NOTION_DATABASE_ID: hasDb ? 'present' : 'missing'
-    },
-    now: new Date().toISOString(),
-    errors
-  }));
-};
+      NOTION_TOKEN: token ? "present" : "missing",
+      NOTION_DB_ID_or_NOTION_DATABASE_ID: db ? "present" : "missing"
+    }
+  });
+}
