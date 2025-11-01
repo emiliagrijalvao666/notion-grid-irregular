@@ -18,6 +18,7 @@ const els = {
   fPlatform: document.getElementById('fPlatform'),
   fOwner: document.getElementById('fOwner'),
   fStatus: document.getElementById('fStatus'),
+
   mClient: document.getElementById('mClient'),
   mProject: document.getElementById('mProject'),
   mPlatform: document.getElementById('mPlatform'),
@@ -42,14 +43,7 @@ const state = {
   posts: [],
   loading: false,
   modal: { open:false, assets:[], index:0, lastFocus:null },
-
-  // Prefetch del siguiente page
-  prefetched: null,
 };
-let prefetching = false;
-
-// AbortController para cancelar fetchs viejos del grid
-let gridAbort = null;
 
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
 
@@ -61,9 +55,7 @@ const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov
     'modal','modalBackdrop','modalClose','vStage','vPrev','vNext','vDots','vCopy'
   ];
   const missing = required.filter(id => !document.getElementById(id));
-  if (missing.length){
-    console.error('Faltan elementos en HTML:', missing);
-  }
+  if (missing.length){ console.error('Faltan elementos en HTML:', missing); }
 })();
 
 /* ===== Boot ===== */
@@ -106,69 +98,69 @@ function wireMenus(){
 }
 
 async function loadFilters(){
-  // Cache FE 5 min con revalidación silenciosa
-  const CACHE_KEY = 'filters_cache_v1';
-  const TTL = 5 * 60 * 1000;
-
-  async function fetchFilters(){
-    const r = await fetch('/api/filters');
-    const j = await r.json();
-    if(!j.ok) throw new Error(j.error||'filters');
-    return normalizeFilters(j);
-  }
-
   try{
     showOverlay(true);
+    const resp = await fetch('/api/filters');
+    const json = await resp.json();
+    if(!json.ok) throw new Error(json.error||'filters');
 
-    // 1) servir desde cache si está fresco
-    const cached = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-    if (cached && (Date.now() - cached.ts) < TTL){
-      state.filtersData = cached.data;
-      paintMenus();
-      // 2) revalidar en background
-      fetchFilters()
-        .then(data=>{
-          state.filtersData = data;
-          localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), data}));
-          paintMenus(); // si cambió algo en Notion, se refleja
-        })
-        .catch(()=>{ /* silent */ });
-      return;
-    }
+    state.filtersData = normalizeFilters(json);
 
-    // sin cache o vencido → fetch normal
-    state.filtersData = await fetchFilters();
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ts:Date.now(), data:state.filtersData}));
-    paintMenus();
-  }catch(err){
-    toast('No se pudieron cargar los filtros.');
-    state.filtersData = {clients:[],projects:[],platforms:[],owners:[],statuses:[]};
-  }finally{
-    showOverlay(false);
-  }
-
-  function paintMenus(){
-    // Nota: owners -> value = id (para que Notion acepte people.contains)
-    renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true,  searchable:true});
-    renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true,  searchable:true});
-    renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true,  searchable:true});
-    renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id, {multi:true,  searchable:true, initials:true});
-    renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name, {multi:false, searchable:true});
+    // ⚠️ Etiqueta SIEMPRE con .name; valor con .id (o string)
+    renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id,    {multi:true,  searchable:true});
+    renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id,    {multi:true,  searchable:true});
+    renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,       {multi:true,  searchable:true});
+    renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id,    {multi:true,  searchable:true, initials:true});
+    renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name,  {multi:false, searchable:true});
 
     setBtnText(els.fClient, "All Clients");
     setBtnText(els.fProject, "All Projects");
     setBtnText(els.fPlatform, "All Platforms");
     setOwnerBtnLabel();
     setBtnText(els.fStatus, "All Status");
+  }catch(err){
+    toast('No se pudieron cargar los filtros.');
+    state.filtersData = {clients:[],projects:[],platforms:[],owners:[],statuses:[]};
+  }finally{
+    showOverlay(false);
   }
 }
 
+/* —— Normaliza respuesta de /api/filters para evitar UUID como label —— */
 function normalizeFilters(json){
-  const clients   = (json.clients||[]).map(c => ({ id:c.id||c.value||c.name, name:c.name||String(c.value||c.id||'')||'Untitled' }));
-  const projects  = (json.projects||[]).map(p => ({ id:p.id||p.value||p.name, name:p.name||String(p.value||p.id||'')||'Untitled', clientIds:Array.isArray(p.clientIds)?p.clientIds:[] }));
-  const platforms = (json.platforms||[]).map(p => typeof p==='string' ? p : (p.name||'')).filter(Boolean);
-  const owners    = (json.owners||[]).map(o => ({ id:o.id||o.value, name:o.name||String(o.value||'')||'Unknown' }));
-  const statuses  = (json.statuses||[]).map(s => ({ name:s.name||String(s.value||'') })).filter(s=>s.name);
+  const cleanName = (raw, fallback='Untitled')=>{
+    if (!raw) return fallback;
+    const s = String(raw).trim();
+    // si parece UUID (contiene 3+ guiones), ignóralo como nombre visible
+    const isUuidish = (s.match(/-/g)||[]).length >= 3;
+    return isUuidish ? fallback : s;
+  };
+
+  const clients   = (json.clients||[]).map(c => ({
+    id: c.id || c.value || c.name,
+    name: cleanName(c.name)
+  }));
+
+  const projects  = (json.projects||[]).map(p => ({
+    id: p.id || p.value || p.name,
+    name: cleanName(p.name),
+    clientIds: Array.isArray(p.clientIds) ? p.clientIds : []
+  }));
+
+  const platforms = (json.platforms||[])
+    .map(p => (typeof p==='string' ? p : (p.name||'')))
+    .filter(Boolean);
+
+  // owners deben usar ID (people.contains) pero mostrar nombre
+  const owners    = (json.owners||[]).map(o => ({
+    id: o.id || o.value,
+    name: cleanName(o.name, 'Unknown')
+  }));
+
+  const statuses  = (json.statuses||[])
+    .map(s => ({ name: cleanName(s.name) }))
+    .filter(s=>s.name);
+
   return { clients, projects, platforms, owners, statuses };
 }
 
@@ -331,85 +323,47 @@ function scheduleRefresh(){ clearTimeout(refreshTimer); refreshTimer = setTimeou
 
 async function refresh(reset=false){
   if (state.loading) return;
-  if (reset){ state.cursor=null; state.posts=[]; state.prefetched=null; }
+  if (reset){ state.cursor=null; state.posts=[]; }
   showOverlay(true);
   await fetchMore(true);
   showOverlay(false);
 }
 
 async function onMore(){
-  // Si ya tenemos prefetched, úsalo instantáneo
-  if (state.prefetched){
-    const { posts, cursor } = state.prefetched;
-    state.posts = state.posts.concat(posts);
-    state.prefetched = null;
-    state.cursor = cursor || null;
-    renderGrid(state.posts);
-    els.more.style.display = state.cursor ? 'inline-flex' : 'none';
-    prefetchNext();
-    return;
-  }
   if (state.loading) return;
   showMoreLoading(true);
   await fetchMore(false);
   showMoreLoading(false);
 }
 
-async function fetchMore(replace, opts={prefetch:false}){
+async function fetchMore(replace){
   try{
-    if (!opts.prefetch) state.loading = true;
-
-    // cancelar request anterior (evita “parpadeos”)
-    if (!opts.prefetch && gridAbort) gridAbort.abort();
-    const ctrl = new AbortController();
-    if (!opts.prefetch) gridAbort = ctrl;
-
+    state.loading = true;
     const params = new URLSearchParams();
     params.set('pageSize','12');
-    if(state.cursor && !opts.prefetch) params.set('cursor', state.cursor);
-    if(state.cursor &&  opts.prefetch  && !state.prefetched) params.set('cursor', state.cursor);
-
+    if (state.cursor) params.set('cursor', state.cursor);
     state.selected.clients.forEach(v=>params.append('client', v));
     state.selected.projects.forEach(v=>params.append('project', v));
     state.selected.platforms.forEach(v=>params.append('platform', v));
     state.selected.owners.forEach(v=>params.append('owner', v));     // IDs
     state.selected.statuses.forEach(v=>params.append('status', v));  // single
 
-    const resp = await fetch(`/api/grid?${params.toString()}`, { signal: ctrl.signal });
+    const resp = await fetch(`/api/grid?${params.toString()}`);
     const json = await resp.json();
     if (!json.ok) throw new Error(json.error||'grid');
 
-    const posts = (json.posts||[]).map(mapPostShape);
-
-    if (opts.prefetch){
-      state.prefetched = { posts, cursor: json.next_cursor || null };
-      return;
-    }
-
     state.cursor = json.next_cursor || null;
-    state.posts  = replace ? posts : state.posts.concat(posts);
+    const posts = (json.posts||[]).map(mapPostShape);
+    state.posts = replace ? posts : state.posts.concat(posts);
 
     renderGrid(state.posts);
     if (els.more) els.more.style.display = state.cursor ? 'inline-flex' : 'none';
-
-    // prefetch del siguiente page
-    prefetchNext();
   }catch(err){
-    if (!opts.prefetch){
-      toast('No se pudo cargar el grid.');
-      if (state.posts.length===0) els.grid.innerHTML = placeholderList(12);
-    }
+    toast('No se pudo cargar el grid.');
+    if (state.posts.length===0) els.grid.innerHTML = placeholderList(12);
   }finally{
-    if (!opts.prefetch) state.loading = false;
+    state.loading = false;
   }
-}
-
-function prefetchNext(){
-  if (!state.cursor || prefetching || state.prefetched) return;
-  prefetching = true;
-  fetchMore(false, {prefetch:true})
-    .catch(()=>{})
-    .finally(()=>{ prefetching = false; });
 }
 
 function mapPostShape(p){
@@ -433,9 +387,9 @@ function mapPostShape(p){
 function renderGrid(list){
   const cards = list.map(renderCard);
   const slots = (12 - (cards.length % 12)) % 12;
-  els.grid.innerHTML = list.length ? (cards.join('') + placeholderList(slots)) : placeholderList(12);
+  if (list.length===0) els.grid.innerHTML = placeholderList(12);
+  else els.grid.innerHTML = cards.join('') + placeholderList(slots);
   hookCardEvents();
-  setupMediaObserver(); // activa lazy real de videos
 }
 
 function renderCard(p){
@@ -454,15 +408,11 @@ function renderCard(p){
     </div>
   `;
 
-  // Lazy real: imágenes con loading="lazy"; videos sin src hasta visible
-  let mediaEl = `<div class="placeholder">No content</div>`;
-  if (first){
-    if (isVideo){
-      mediaEl = `<video class="card__media" preload="none" muted playsinline data-src="${escapeHtml(first.url)}"></video>`;
-    } else {
-      mediaEl = `<img class="card__media" alt="" loading="lazy" decoding="async" src="${escapeHtml(first.url)}" />`;
-    }
-  }
+  const mediaEl = first
+    ? (isVideo
+        ? `<video class="card__media" preload="metadata" muted playsinline src="${escapeHtml(first.url)}"></video>`
+        : `<img class="card__media" alt="" src="${escapeHtml(first.url)}" />`)
+    : `<div class="placeholder">No content</div>`;
 
   const date = p.date ? fmtDate(p.date) : '';
 
@@ -477,25 +427,6 @@ function renderCard(p){
       </div>
     </div>
   `;
-}
-
-function setupMediaObserver(){
-  const vids = Array.from(document.querySelectorAll('video.card__media[data-src]'));
-  if (!('IntersectionObserver' in window) || vids.length===0){
-    vids.forEach(v => { v.src = v.dataset.src; v.removeAttribute('data-src'); });
-    return;
-  }
-  const io = new IntersectionObserver((entries, obs)=>{
-    entries.forEach(entry=>{
-      if (!entry.isIntersecting) return;
-      const v = entry.target;
-      v.src = v.dataset.src;
-      v.preload = 'metadata';
-      v.removeAttribute('data-src');
-      obs.unobserve(v);
-    });
-  }, { threshold: 0.25 });
-  vids.forEach(v => io.observe(v));
 }
 
 function ownerSquare(name){
