@@ -1,131 +1,105 @@
 // /api/filters.js
 import { Client } from "@notionhq/client";
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
-
-const CONTENT_DB = process.env.NOTION_DATABASE_ID;
-const CLIENTS_DB = process.env.NOTION_DB_CLIENTS;
-const PROJECTS_DB = process.env.NOTION_DB_PROJECTS;
-
-async function getAllFromDB(database_id) {
-  const pages = [];
-  let cursor = undefined;
-
-  do {
-    const resp = await notion.databases.query({
-      database_id,
-      start_cursor: cursor,
-      page_size: 100,
-    });
-    pages.push(...resp.results);
-    cursor = resp.has_more ? resp.next_cursor : undefined;
-  } while (cursor);
-
-  return pages;
-}
+const notion = new Client({
+  auth: process.env.NOTION_TOKEN,
+});
 
 export default async function handler(req, res) {
   try {
-    if (!process.env.NOTION_TOKEN) {
-      return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN" });
-    }
-    if (!CONTENT_DB) {
-      return res.status(500).json({ ok: false, error: "Missing NOTION_DATABASE_ID" });
-    }
-
-    // 1) CLIENTS
-    let clients = [];
-    if (CLIENTS_DB) {
-      const clientPages = await getAllFromDB(CLIENTS_DB);
-      clients = clientPages.map((p) => {
-        const title = p.properties?.Name?.title?.[0]?.plain_text || "Sin nombre";
-        return {
-          id: p.id,
-          name: title,
-        };
+    const databaseId = process.env.NOTION_DATABASE_ID;
+    if (!databaseId) {
+      return res.status(500).json({
+        ok: false,
+        error: "Missing NOTION_DATABASE_ID",
       });
     }
 
-    // 2) PROJECTS
-    let projects = [];
-    if (PROJECTS_DB) {
-      const projectPages = await getAllFromDB(PROJECTS_DB);
-      projects = projectPages.map((p) => {
-        const title =
-          p.properties?.["Project name"]?.title?.[0]?.plain_text ||
-          p.properties?.Name?.title?.[0]?.plain_text ||
-          "Sin nombre";
-
-        // relación al cliente (puede venir vacía o múltiple)
-        const rel = p.properties?.["Client"]?.relation || [];
-        const clientIds = rel.map((r) => r.id);
-
-        return {
-          id: p.id,
-          name: title,
-          clientIds, // <- para el front "muéstrame solo los del cliente X"
-        };
-      });
-    }
-
-    // 3) CONTENT → owners, platforms, statuses
-    const contentPages = await notion.databases.query({
-      database_id: CONTENT_DB,
+    // Traemos hasta 100 para armar los selects
+    const query = await notion.databases.query({
+      database_id: databaseId,
       page_size: 100,
+      sorts: [
+        {
+          property: "Publish Date",
+          direction: "descending",
+        },
+      ],
     });
 
-    const ownersSet = new Map();
+    const clientsMap = new Map();
+    const projectsMap = new Map();
     const platformsSet = new Set();
-    const statusesSet = new Set();
+    const ownersMap = new Map();
+    const statusSet = new Set();
 
-    contentPages.results.forEach((page) => {
+    for (const page of query.results) {
       const props = page.properties || {};
 
-      // Owners (people)
-      const people = props["Owner"]?.people || [];
-      people.forEach((person) => {
-        const name = person.name || person.id;
-        ownersSet.set(person.id, name);
-      });
+      // CLIENT
+      if (props["Client"] && props["Client"].relation && props["Client"].relation.length > 0) {
+        props["Client"].relation.forEach((rel) => {
+          // relation → solo id
+          if (!clientsMap.has(rel.id)) {
+            // dejamos el id como label temporal
+            clientsMap.set(rel.id, {
+              id: rel.id,
+              name: rel.id, // si quieres nombre “bonito” se puede hacer otra llamada, pero esto es lo que Notion da aquí
+            });
+          }
+        });
+      }
 
-      // Platforms (multi select)
-      const platformMS = props["Platform"]?.multi_select || [];
-      platformMS.forEach((pl) => {
-        if (pl.name) platformsSet.add(pl.name);
-      });
+      // PROJECT
+      if (props["Project"] && props["Project"].relation && props["Project"].relation.length > 0) {
+        props["Project"].relation.forEach((rel) => {
+          if (!projectsMap.has(rel.id)) {
+            projectsMap.set(rel.id, {
+              id: rel.id,
+              name: rel.id,
+            });
+          }
+        });
+      }
 
-      // Status (status)
-      const st = props["Status"]?.status?.name;
-      if (st) statusesSet.add(st);
-    });
+      // PLATFORM
+      if (props["Platform"] && props["Platform"].multi_select) {
+        props["Platform"].multi_select.forEach((opt) => {
+          platformsSet.add(opt.name);
+        });
+      }
 
-    const owners = Array.from(ownersSet.entries()).map(([id, name]) => ({
-      id,
-      name,
-    }));
+      // OWNER
+      if (props["Owner"] && props["Owner"].people && props["Owner"].people.length > 0) {
+        props["Owner"].people.forEach((p) => {
+          if (!ownersMap.has(p.id)) {
+            ownersMap.set(p.id, {
+              id: p.id,
+              name: p.name || p.id,
+            });
+          }
+        });
+      }
 
-    const platforms = Array.from(platformsSet).map((name) => ({
-      id: name,
-      name,
-    }));
-
-    const statuses = Array.from(statusesSet).map((name) => ({
-      id: name,
-      name,
-    }));
+      // STATUS
+      if (props["Status"] && props["Status"].status) {
+        statusSet.add(props["Status"].status.name);
+      }
+    }
 
     return res.status(200).json({
       ok: true,
-      clients,
-      projects,
-      owners,
-      platforms,
-      statuses,
+      clients: Array.from(clientsMap.values()),
+      projects: Array.from(projectsMap.values()),
+      platforms: Array.from(platformsSet.values()),
+      owners: Array.from(ownersMap.values()),
+      statuses: Array.from(statusSet.values()),
     });
   } catch (err) {
-    console.error("FILTERS ERROR:", err);
-    return res
-      .status(500)
-      .json({ ok: false, error: err.message || "Unknown error" });
+    console.error("FILTERS ERROR", err.message);
+    return res.status(500).json({
+      ok: false,
+      error: err.message,
+    });
   }
 }
