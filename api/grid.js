@@ -3,6 +3,7 @@ import { notion } from './_notion.js';
 
 const CONTENT_DB_ID   = process.env.NOTION_DB_ID || process.env.CONTENT_DB_ID || process.env.NOTION_DATABASE_ID;
 const PAGE_SIZE_MAX   = 50;
+const HORIZON_DAYS    = parseInt(process.env.HORIZON_DAYS || '0', 10); // 0 = desactivado
 
 // candidatos de propiedades en el Content DB
 const TITLE_CANDS     = ['Name','Título','Title','Post','Post title'];
@@ -19,6 +20,9 @@ const REL_PROJECTS_CANDS = ['Project','Projects','PostProject'];
 
 export default async function handler(req, res){
   try{
+    // Cache CDN (Vercel) para acelerar lecturas; revalida en background
+    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
+
     if (!CONTENT_DB_ID) return res.json({ ok:false, error:'Missing NOTION_DB_ID / CONTENT_DB_ID' });
 
     const qs = req.query;
@@ -29,7 +33,7 @@ export default async function handler(req, res){
       clients:   asArray(qs.client),
       projects:  asArray(qs.project),
       platforms: asArray(qs.platform),
-      owners:    asArray(qs.owner),   // IDs
+      owners:    asArray(qs.owner),   // IDs de people
       statuses:  asArray(qs.status),  // single
     };
 
@@ -75,6 +79,12 @@ export default async function handler(req, res){
       and.push({
         or: sel.owners.map(id => ({ property: ownerKey, people: { contains: id }}))
       });
+    }
+
+    // Horizonte opcional por fecha (reduce escaneo en Notion)
+    if (HORIZON_DAYS > 0 && dateKey){
+      const d = new Date(Date.now() - HORIZON_DAYS*864e5).toISOString();
+      and.push({ property: dateKey, date: { on_or_after: d } });
     }
 
     const filter = and.length ? { and } : undefined;
