@@ -9,29 +9,25 @@ const DB_ID =
   process.env.NOTION_DB_CONTENT ||
   process.env.NOTION_CONTENT_DB_ID;
 
-// cache simple en memoria para no pedir mil veces el mismo relation
+// cache simple en memoria
 const relationCache = {
-  byId: {}, // { "page_id": "Nombre bonito" }
+  byId: {},
 };
 
-// helper: obtiene el name/title de una página relacionada
 async function getRelationName(pageId) {
   if (!pageId) return null;
   if (relationCache.byId[pageId]) return relationCache.byId[pageId];
 
   try {
     const page = await notion.pages.retrieve({ page_id: pageId });
-    // 1) si tiene propiedad Name
     const props = page.properties || {};
-    // busca una propiedad de tipo title
     const titleProp = Object.values(props).find((p) => p.type === "title");
     let name = null;
     if (titleProp && Array.isArray(titleProp.title) && titleProp.title[0]) {
       name = titleProp.title[0].plain_text;
     }
-    // fallback al título de la página
-    if (!name && page.object === "page" && page.id) {
-      name = `Item ${page.id.slice(0, 6)}`;
+    if (!name) {
+      name = `Item ${pageId.slice(0, 6)}`;
     }
     relationCache.byId[pageId] = name;
     return name;
@@ -58,10 +54,9 @@ export default async function handler(req, res) {
     });
   }
 
-  // 1. leer query del front
   const {
     status, // "Published Only" | "All Status"
-    client, // nombre de cliente que eligió el user
+    client,
     project,
     brand,
     platform,
@@ -70,23 +65,22 @@ export default async function handler(req, res) {
     limit,
   } = req.query;
 
-  // 2. SIEMPRE filtrar hide / archivado en Notion
-  const baseFilters = [
-    {
-      or: [
-        { property: "Hide", checkbox: { equals: false } },
-        { property: "Hide", checkbox: { is_empty: true } },
-      ],
-    },
-    {
-      or: [
-        { property: "Archivado", checkbox: { equals: false } },
-        { property: "Archivado", checkbox: { is_empty: true } },
-      ],
-    },
-  ];
+  // 1) filtros base SIEMPRE: Hide = false, Archivado = false
+  const baseFilters = [];
 
-  // 3. status: si el front NO dice "All Status", filtramos a publicados
+  // Hide
+  baseFilters.push({
+    property: "Hide",
+    checkbox: { equals: false },
+  });
+
+  // Archivado
+  baseFilters.push({
+    property: "Archivado",
+    checkbox: { equals: false },
+  });
+
+  // 2) status publicado vs todos
   const wantsAllStatus =
     status && (status === "All Status" || status === "all" || status === "all-status");
 
@@ -101,7 +95,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // 4. query a Notion (solo con los filtros que SÍ sabe hacer Notion)
   const body = {
     database_id: DB_ID,
     filter: { and: baseFilters },
@@ -139,21 +132,11 @@ export default async function handler(req, res) {
 
   const rawPages = notionResp.results || [];
 
-  // 5. transformar pages → posts
-  // aquí también vamos a construir los filtros
-  const clientsSet = new Map(); // name -> count
-  const projectsSet = new Map();
-  const brandsSet = new Map();
-  const platformsSet = new Map();
-  const ownersSet = new Map();
-
-  // como las relations vienen con IDs, primero recogemos TODOS los ids
+  // recolectar relations para resolver nombres
   const relationIdsToFetch = new Set();
 
   for (const page of rawPages) {
     const props = page.properties || {};
-
-    // relations crudas
     const postClient = props["PostClient"]?.relation || [];
     const postBrands = props["PostBrands"]?.relation || [];
     const postProject = props["PostProject"]?.relation || [];
@@ -163,22 +146,26 @@ export default async function handler(req, res) {
     postProject.forEach((r) => relationIdsToFetch.add(r.id));
   }
 
-  // 5.1. fetch de nombres de relations que todavía no tenemos en cache
+  // traer los que falten
   const toFetch = Array.from(relationIdsToFetch).filter(
     (id) => !relationCache.byId[id]
   );
-
-  // NOTA: esto lo hacemos en serie simple para no pegarle demasiado a Notion
   for (const id of toFetch) {
     // eslint-disable-next-line no-await-in-loop
     await getRelationName(id);
   }
 
-  // 6. ahora sí: armar lista de posts ya con nombres
+  const clientsSet = new Map();
+  const projectsSet = new Map();
+  const brandsSet = new Map();
+  const platformsSet = new Map();
+  const ownersSet = new Map();
+
   const posts = [];
 
   for (const page of rawPages) {
     const props = page.properties || {};
+
     const titleProp = props["Name"] || props["Post"] || props["Title"];
     const title =
       (titleProp &&
@@ -188,8 +175,7 @@ export default async function handler(req, res) {
       "Untitled";
 
     const dateProp = props["Publish Date"] || props["Date"] || null;
-    const date =
-      dateProp && dateProp.date ? dateProp.date.start : null;
+    const date = dateProp && dateProp.date ? dateProp.date.start : null;
 
     const statusProp = props["Status"] || null;
     const statusVal =
@@ -239,39 +225,28 @@ export default async function handler(req, res) {
       }));
     }
 
-    // 6.1 FILTRO EN MEMORIA (porque Notion no filtra por nombre de relation)
-    // client
+    // FILTRO EN MEMORIA
     if (client && client !== "all") {
-      if (!clientNames.includes(client)) {
-        continue; // saltar este post
-      }
-    }
-    // project
-    if (project && project !== "all") {
-      if (!projectNames.includes(project)) {
-        continue;
-      }
-    }
-    // brand
-    if (brand && brand !== "all") {
-      if (!brandNames.includes(brand)) {
-        continue;
-      }
-    }
-    // platform
-    if (platform && platform !== "all") {
-      if (!platforms.includes(platform)) {
-        continue;
-      }
-    }
-    // owner
-    if (owner && owner !== "all") {
-      if (ownerName !== owner) {
-        continue;
-      }
+      if (!clientNames.includes(client)) continue;
     }
 
-    // crear el post que va al front
+    if (project && project !== "all") {
+      if (!projectNames.includes(project)) continue;
+    }
+
+    if (brand && brand !== "all") {
+      if (!brandNames.includes(brand)) continue;
+    }
+
+    if (platform && platform !== "all") {
+      if (!platforms.includes(platform)) continue;
+    }
+
+    if (owner && owner !== "all") {
+      if (ownerName !== owner) continue;
+    }
+
+    // agregar post
     posts.push({
       id: page.id,
       title,
@@ -303,24 +278,21 @@ export default async function handler(req, res) {
     }
   }
 
-  // 7. armar filtros ordenados
   const toArr = (map) =>
     Array.from(map.entries())
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-  const filters = {
-    clients: toArr(clientsSet),
-    projects: toArr(projectsSet),
-    brands: toArr(brandsSet),
-    platforms: toArr(platformsSet),
-    owners: toArr(ownersSet),
-  };
-
   return res.status(200).json({
     ok: true,
     posts,
-    filters,
+    filters: {
+      clients: toArr(clientsSet),
+      projects: toArr(projectsSet),
+      brands: toArr(brandsSet),
+      platforms: toArr(platformsSet),
+      owners: toArr(ownersSet),
+    },
     has_more: notionResp.has_more,
     next_cursor: notionResp.next_cursor || null,
   });
