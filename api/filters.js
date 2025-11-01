@@ -4,148 +4,192 @@ import { Client } from "@notionhq/client";
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DB_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ID;
 
-export default async function handler(req, res) {
-  if (!DB_ID) {
-    return res.status(500).json({
-      ok: false,
-      error: "Missing NOTION_DATABASE_ID",
-      clients: [],
-      projects: [],
-      platforms: [],
-      owners: [],
-      statuses: [],
-    });
+function safePlainTextFromTitleArray(arr = []) {
+  return arr.map(t => t.plain_text || "").join("").trim();
+}
+
+function extractStringsFromProperty(prop) {
+  if (!prop) return [];
+
+  const type = prop.type;
+
+  // 1) title
+  if (type === "title") {
+    const txt = safePlainTextFromTitleArray(prop.title);
+    return txt ? [txt] : [];
   }
 
-  // 1) primero intentamos con los 2 checkboxes
+  // 2) rich_text
+  if (type === "rich_text") {
+    const txt = (prop.rich_text || []).map(t => t.plain_text || "").join("").trim();
+    return txt ? [txt] : [];
+  }
+
+  // 3) select / multi_select
+  if (type === "select") {
+    return prop.select && prop.select.name ? [prop.select.name] : [];
+  }
+  if (type === "multi_select") {
+    return (prop.multi_select || []).map(s => s.name).filter(Boolean);
+  }
+
+  // 4) status
+  if (type === "status") {
+    return prop.status && prop.status.name ? [prop.status.name] : [];
+  }
+
+  // 5) people
+  if (type === "people") {
+    return (prop.people || []).map(p => p.name || (p.person && p.person.email) || "").filter(Boolean);
+  }
+
+  // 6) rollup - array of items (this is the important part)
+  if (type === "rollup") {
+    const arr = prop.rollup?.array || [];
+    const out = [];
+    for (const item of arr) {
+      // item often has structure like { type: 'title', title: [...] } or 'rich_text' or 'select'
+      if (item.type === "title" && item.title) {
+        out.push(safePlainTextFromTitleArray(item.title));
+      } else if (item.type === "rich_text" && item.rich_text) {
+        out.push((item.rich_text || []).map(t => t.plain_text || "").join(""));
+      } else if (item.type === "select" && item.select) {
+        out.push(item.select.name);
+      } else if (item.type === "status" && item.status) {
+        out.push(item.status.name);
+      } else if (item.type === "people" && item.people) {
+        out.push(...(item.people || []).map(p => p.name || "").filter(Boolean));
+      } else if (item.type === "relation" && item.relation) {
+        // sometimes rollup of relation gives array of relation objects — they only have id, no name
+        // ignore (can't resolve names here without extra queries)
+      } else {
+        // defensive: try any nested text arrays
+        if (item.title) out.push(safePlainTextFromTitleArray(item.title));
+        if (item.rich_text) out.push((item.rich_text || []).map(t => t.plain_text || "").join(""));
+      }
+    }
+    return out.filter(Boolean);
+  }
+
+  // 7) relation (can't read names from relation type directly via this property)
+  if (type === "relation") {
+    // relation gives only ids, so we can't extract names here without additional Notion lookups
+    return [];
+  }
+
+  // fallback
+  return [];
+}
+
+export default async function handler(req, res) {
+  if (!DB_ID) {
+    return res.status(500).json({ ok: false, error: "Missing NOTION_DATABASE_ID", clients: [], projects: [], platforms: [], owners: [], statuses: [] });
+  }
+
+  // attempt to fetch pages with Archivado/Hide filters if available, fallback if not
   let pages = [];
   try {
-    const first = await notion.databases.query({
+    const q = await notion.databases.query({
       database_id: DB_ID,
       page_size: 100,
       filter: {
         and: [
-          {
-            property: "Archivado",
-            checkbox: { equals: false },
-          },
-          {
-            property: "Hide",
-            checkbox: { equals: false },
-          },
+          { property: "Archivado", checkbox: { equals: false } },
+          { property: "Hide", checkbox: { equals: false } },
         ],
       },
     });
-    pages = first.results;
-
-    // si hay más páginas, las traemos rápido
-    let cursor = first.has_more ? first.next_cursor : null;
+    pages = q.results;
+    let cursor = q.has_more ? q.next_cursor : null;
     while (cursor) {
-      const next = await notion.databases.query({
-        database_id: DB_ID,
-        page_size: 100,
-        start_cursor: cursor,
-      });
-      pages = pages.concat(next.results);
-      cursor = next.has_more ? next.next_cursor : null;
+      const n = await notion.databases.query({ database_id: DB_ID, page_size: 100, start_cursor: cursor });
+      pages = pages.concat(n.results);
+      cursor = n.has_more ? n.next_cursor : null;
     }
   } catch (err) {
-    // 2) si falló es porque alguna de las dos columnas no existe (pasó eso contigo antes)
-    // volvemos a intentar SIN los checkboxes
+    // fallback: try without those two filters
     try {
-      const fallback = await notion.databases.query({
-        database_id: DB_ID,
-        page_size: 100,
-      });
-      pages = fallback.results;
+      const q2 = await notion.databases.query({ database_id: DB_ID, page_size: 100 });
+      pages = q2.results;
+      let cursor = q2.has_more ? q2.next_cursor : null;
+      while (cursor) {
+        const n = await notion.databases.query({ database_id: DB_ID, page_size: 100, start_cursor: cursor });
+        pages = pages.concat(n.results);
+        cursor = n.has_more ? n.next_cursor : null;
+      }
     } catch (err2) {
-      return res.status(500).json({
-        ok: false,
-        error: err2.message,
-        clients: [],
-        projects: [],
-        platforms: [],
-        owners: [],
-        statuses: [],
-      });
+      return res.status(500).json({ ok: false, error: err2.message, clients: [], projects: [], platforms: [], owners: [], statuses: [] });
     }
   }
 
-  // ahora sí: recolectamos
+  // collectors
   const clientsMap = new Map();
   const projectsMap = new Map();
   const platformsSet = new Set();
   const ownersMap = new Map();
   const statusesSet = new Set();
 
+  // name candidates for each concept (tries in order)
+  const clientProps = ["ClientName", "PostClient", "PostClients", "Client", "Clients"];
+  const projectProps = ["ProjectName", "PostProject", "PostProjects", "Project", "Projects"];
+  const platformProps = ["Platform", "Plataforma", "Platforms", "PostPlatform", "PostPlatforms", "PlatformName"];
+  const ownerProps = ["Owner", "Owners", "People", "OwnerName"];
+  const statusProps = ["Status", "Estado", "PostStatus"];
+
   for (const page of pages) {
     const props = page.properties || {};
 
-    // --- CLIENTES: usamos SOLO ClientName (formula)
-    const clientProp = props["ClientName"];
-    if (clientProp && clientProp.type === "rich_text") {
-      const txt = clientProp.rich_text.map((t) => t.plain_text).join("").trim();
-      if (txt) {
-        clientsMap.set(txt, (clientsMap.get(txt) || 0) + 1);
+    // --- CLIENT
+    for (const n of clientProps) {
+      if (props[n]) {
+        const vals = extractStringsFromProperty(props[n]);
+        vals.forEach(v => clientsMap.set(v, (clientsMap.get(v) || 0) + 1));
+        break;
       }
     }
 
-    // --- PROYECTOS: ProjectName (formula)
-    const projectProp = props["ProjectName"];
-    if (projectProp && projectProp.type === "rich_text") {
-      const txt = projectProp.rich_text.map((t) => t.plain_text).join("").trim();
-      if (txt) {
-        projectsMap.set(txt, (projectsMap.get(txt) || 0) + 1);
+    // --- PROJECT
+    for (const n of projectProps) {
+      if (props[n]) {
+        const vals = extractStringsFromProperty(props[n]);
+        vals.forEach(v => projectsMap.set(v, (projectsMap.get(v) || 0) + 1));
+        break;
       }
     }
 
-    // --- PLATAFORMAS: puede ser "Platform" o "Plataforma" o "Platforms"
-    let platformValue = null;
-    if (props["Platform"] && props["Platform"].type === "select") {
-      platformValue = props["Platform"].select?.name;
-    } else if (props["Plataforma"] && props["Plataforma"].type === "select") {
-      platformValue = props["Plataforma"].select?.name;
-    } else if (props["Platforms"] && props["Platforms"].type === "multi_select") {
-      // por si alguien puso varias
-      const arr = props["Platforms"].multi_select.map((m) => m.name).filter(Boolean);
-      arr.forEach((x) => platformsSet.add(x));
-    }
-    if (platformValue) {
-      platformsSet.add(platformValue);
+    // --- PLATFORMS
+    for (const n of platformProps) {
+      if (props[n]) {
+        const vals = extractStringsFromProperty(props[n]);
+        vals.forEach(v => platformsSet.add(v));
+        break;
+      }
     }
 
-    // --- OWNERS: person
-    if (props["Owner"] && props["Owner"].type === "people") {
-      const people = props["Owner"].people || [];
-      people.forEach((p) => {
-        const name = p.name || p.person?.email || "Unknown";
-        ownersMap.set(name, (ownersMap.get(name) || 0) + 1);
-      });
+    // --- OWNERS
+    for (const n of ownerProps) {
+      if (props[n]) {
+        const vals = extractStringsFromProperty(props[n]);
+        vals.forEach(v => ownersMap.set(v, (ownersMap.get(v) || 0) + 1));
+        break;
+      }
     }
 
     // --- STATUS
-    if (props["Status"] && props["Status"].type === "status") {
-      const st = props["Status"].status?.name;
-      if (st) statusesSet.add(st);
+    for (const n of statusProps) {
+      if (props[n]) {
+        const vals = extractStringsFromProperty(props[n]);
+        vals.forEach(v => statusesSet.add(v));
+        break;
+      }
     }
   }
 
-  // convertimos a arrays ordenados
-  const clients = Array.from(clientsMap.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const projects = Array.from(projectsMap.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const owners = Array.from(ownersMap.entries())
-    .map(([name, count]) => ({ name, count }))
-    .sort((a, b) => b.count - a.count);
-
-  const platforms = Array.from(platformsSet.values()).sort((a, b) => a.localeCompare(b));
-
-  const statuses = Array.from(statusesSet.values());
+  const clients = Array.from(clientsMap.entries()).map(([name, count]) => ({ name, count })).sort((a,b)=>b.count-a.count);
+  const projects = Array.from(projectsMap.entries()).map(([name, count]) => ({ name, count })).sort((a,b)=>b.count-a.count);
+  const owners = Array.from(ownersMap.entries()).map(([name, count]) => ({ name, count })).sort((a,b)=>b.count-a.count);
+  const platforms = Array.from(platformsSet.values()).filter(Boolean).sort((a,b)=>a.localeCompare(b));
+  const statuses = Array.from(statusesSet.values()).filter(Boolean).sort((a,b)=>a.localeCompare(b));
 
   return res.status(200).json({
     ok: true,
@@ -153,6 +197,6 @@ export default async function handler(req, res) {
     projects,
     platforms,
     owners,
-    statuses,
+    statuses
   });
 }
