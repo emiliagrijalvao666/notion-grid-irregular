@@ -1,58 +1,36 @@
-// api/grid.js
-import { Client as NotionClient } from "@notionhq/client";
+// /api/grid.js
 
-const NOTION_TOKEN =
-  process.env.NOTION_TOKEN ||
-  process.env.NOTION_SECRET ||
-  "";
-const DB_ID =
-  process.env.NOTION_DB_ID ||
-  process.env.NOTION_DATABASE_ID ||
-  "";
+const { Client } = require("@notionhq/client");
 
-function getFormulaString(prop) {
-  if (!prop) return "";
-  if (prop.type === "formula" && prop.formula.type === "string") {
-    return prop.formula.string || "";
-  }
-  return "";
-}
+module.exports = async (req, res) => {
+  // 1. leer envs (acepta los 2 nombres tuyos)
+  const NOTION_TOKEN =
+    process.env.NOTION_TOKEN || process.env.NEXT_PUBLIC_NOTION_TOKEN;
+  const NOTION_DB_ID =
+    process.env.NOTION_DB_ID ||
+    process.env.NOTION_DATABASE_ID || // tú lo tenías así
+    process.env.NOTION_DB ||
+    null;
 
-function getMultiSelect(prop) {
-  if (!prop) return [];
-  if (prop.type === "multi_select") {
-    return prop.multi_select.map((o) => o.name).filter(Boolean);
-  }
-  return [];
-}
-
-function getPeopleName(prop) {
-  if (!prop) return "";
-  if (prop.type === "people" && prop.people.length > 0) {
-    return prop.people[0].name || prop.people[0].id || "";
-  }
-  return "";
-}
-
-function getStatusName(prop) {
-  if (!prop) return "";
-  if (prop.type === "status") {
-    return prop.status?.name || "";
-  }
-  return "";
-}
-
-export default async function handler(req, res) {
-  // igual que en filters: si no hay credenciales, devolvemos posts vacíos
-  if (!NOTION_TOKEN || !DB_ID) {
-    return res.status(200).json({
-      ok: true,
-      warning: "NOTION_TOKEN or NOTION_DB_ID not found in env. Returning empty posts.",
-      posts: [],
+  if (!NOTION_TOKEN || !NOTION_DB_ID) {
+    return res.status(500).json({
+      ok: false,
+      error: "Missing NOTION_TOKEN or NOTION_DB_ID",
     });
   }
 
-  const notion = new NotionClient({ auth: NOTION_TOKEN });
+  const notion = new Client({ auth: NOTION_TOKEN });
+
+  // 2. leer filtros que manda el frontend
+  // si no manda nada, ponemos "all"
+  let body = {};
+  if (req.method === "POST") {
+    try {
+      body = typeof req.body === "string" ? JSON.parse(req.body) : req.body;
+    } catch (e) {
+      body = {};
+    }
+  }
 
   const {
     client = "all",
@@ -60,93 +38,152 @@ export default async function handler(req, res) {
     platform = "all",
     owner = "all",
     status = "all",
-  } = (req.method === "POST" ? req.body : req.query) || {};
+  } = body || {};
+
+  // 3. filtros base (estos son los que te estaban rompiendo)
+  // NO usamos or. Todo definido.
+  const filters = [
+    // no mostrar archivados
+    {
+      property: "Archivado",
+      checkbox: {
+        does_not_equal: true,
+      },
+    },
+    // no mostrar ocultos
+    {
+      property: "Hide",
+      checkbox: {
+        does_not_equal: true,
+      },
+    },
+  ];
+
+  // 4. filtros dinámicos
+  // CLIENT (tu columna es Relation → Clients)
+  if (client && client !== "all") {
+    filters.push({
+      property: "Client",
+      relation: {
+        contains: client,
+      },
+    });
+  }
+
+  // PROJECT (tu columna es Relation → Projects)
+  if (project && project !== "all") {
+    filters.push({
+      property: "Project",
+      relation: {
+        contains: project,
+      },
+    });
+  }
+
+  // PLATFORM (multi-select)
+  if (platform && platform !== "all") {
+    filters.push({
+      property: "Platform",
+      multi_select: {
+        contains: platform,
+      },
+    });
+  }
+
+  // OWNER (people)
+  if (owner && owner !== "all") {
+    filters.push({
+      property: "Owner",
+      people: {
+        contains: owner,
+      },
+    });
+  }
+
+  // STATUS (status de tu DB: Idea, Diseño, Editing, Publicado, etc.)
+  // tú dijiste: “ya funciona All Status, no lo muevas” → entonces solo
+  // aplicamos si NO es "all"
+  if (status && status !== "all") {
+    filters.push({
+      property: "Status",
+      status: {
+        equals: status,
+      },
+    });
+  }
+
+  // 5. armar query para Notion
+  const query = {
+    database_id: NOTION_DB_ID,
+    filter: {
+      and: filters,
+    },
+    sorts: [
+      // primero los pineados
+      {
+        property: "Pinned",
+        direction: "descending",
+      },
+      // luego por Publish Date desc
+      {
+        property: "Publish Date",
+        direction: "descending",
+      },
+      // y como respaldo, fecha de creación
+      {
+        timestamp: "created_time",
+        direction: "descending",
+      },
+    ],
+    page_size: 100,
+  };
 
   try {
-    const pages = [];
-    let cursor = undefined;
+    const response = await notion.databases.query(query);
 
-    do {
-      const response = await notion.databases.query({
-        database_id: DB_ID,
-        start_cursor: cursor,
-        page_size: 100,
-        filter: {
-          and: [
-            {
-              or: [
-                { property: "Hide", checkbox: { equals: false } },
-                { property: "Hide", checkbox: { is_empty: true } },
-              ],
-            },
-            {
-              or: [
-                { property: "Archivado", checkbox: { equals: false } },
-                { property: "Archivado", checkbox: { is_empty: true } },
-              ],
-            },
-          ],
-        },
-        sorts: [
-          { property: "Pinned", direction: "descending" },
-          { property: "Publish Date", direction: "descending" },
-          { timestamp: "last_edited_time", direction: "descending" },
-        ],
-      });
+    // 6. mapear a algo más bonito para el frontend
+    const items = (response.results || []).map((page) => {
+      const props = page.properties || {};
 
-      pages.push(...response.results);
-      cursor = response.has_more ? response.next_cursor : undefined;
-    } while (cursor);
+      const titleProp = props["Post"] || props["Name"] || {};
+      const title =
+        (titleProp.title && titleProp.title[0] && titleProp.title[0].plain_text) ||
+        "Untitled";
 
-    const items = pages
-      .map((page) => {
-        const p = page.properties || {};
+      const coverFiles = props["Attachment"]?.files || [];
+      const firstImage = coverFiles.length ? coverFiles[0] : null;
 
-        const title =
-          p["Post"]?.title?.[0]?.plain_text ||
-          p["Name"]?.title?.[0]?.plain_text ||
-          "Untitled";
+      // relations devuelven ids → el frontend ya las está usando en el select
+      const clientRel = props["Client"]?.relation || [];
+      const projectRel = props["Project"]?.relation || [];
+      const platformMS = props["Platform"]?.multi_select || [];
+      const ownerPeople = props["Owner"]?.people || [];
 
-        const clientName = getFormulaString(p["ClientName"]);
-        const projectName = getFormulaString(p["ProjectName"]);
-        const platforms = getMultiSelect(p["Platform"]);
-        const ownerName = getPeopleName(p["Owner"]);
-        const statusName = getStatusName(p["Status"]);
+      const statusProp = props["Status"]?.status || null;
+      const publishDate = props["Publish Date"]?.date?.start || null;
 
-        const attachments = (p["Attachment"]?.files || []).map((f) => ({
-          url: f.external?.url || f.file?.url || "",
-          name: f.name || "",
-        }));
-
-        const publishDate = p["Publish Date"]?.date?.start || null;
-
-        return {
-          id: page.id,
-          title,
-          clientName,
-          projectName,
-          platforms,
-          ownerName,
-          statusName,
-          publishDate,
-          attachments,
-        };
-      })
-      .filter((item) => {
-        if (client !== "all" && item.clientName !== client) return false;
-        if (project !== "all" && item.projectName !== project) return false;
-        if (platform !== "all" && !item.platforms.includes(platform)) return false;
-        if (owner !== "all" && item.ownerName !== owner) return false;
-        if (status !== "all" && item.statusName !== status) return false;
-        return true;
-      });
+      return {
+        id: page.id,
+        title,
+        image: firstImage?.file?.url || firstImage?.external?.url || null,
+        clientIds: clientRel.map((r) => r.id),
+        projectIds: projectRel.map((r) => r.id),
+        platforms: platformMS.map((p) => p.name),
+        owners: ownerPeople.map((p) => p.id),
+        status: statusProp ? statusProp.name : null,
+        publishDate,
+      };
+    });
 
     return res.status(200).json({
       ok: true,
-      posts: items,
+      items,
     });
   } catch (err) {
-    console.error("grid error", err);
-    return res.status(500).json({ ok: false, error: err.message || "Unknown error" });
+    console.error("Notion query error", err.body || err);
+    return res.status(500).json({
+      ok: false,
+      error: err.body || err.message || "Notion query failed",
+    });
   }
-}
+};
