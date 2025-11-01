@@ -2,82 +2,54 @@
 import { Client } from "@notionhq/client";
 import * as nd from "./_notion.js";
 
-// Usa el cliente de tu _notion.js si existe; si no, crea uno aquí.
 const notion = nd.notion || nd.default || new Client({ auth: process.env.NOTION_TOKEN });
-const DB_ID = process.env.NOTION_DATABASE_ID;
+const DB_ID  = process.env.NOTION_DATABASE_ID;
 
-// Posibles nombres de propiedades en tu DB (soporta tus variantes)
-const PROP = {
-  title:     ["Name","Post Name","Nombre","Name/Title"],
-  date:      ["Publish Date","Fecha","Date","Publish"],
-  platform:  ["Platform","Platforms"],
-  status:    ["Status","Estado"],
-  owners:    ["Owner","Owners"],
-  clientRel: ["Client","PostClient"],
-  projectRel:["Project","PostProject"],
-  pinned:    ["Pinned","Pin"],
-  hide:      ["Hide","Hidden","Ocultar"],
-  archived:  ["Archivado","Archived"]
-};
-
-const pickProp = (props, names) => names.find(n => props[n]);
-
-const isVideoUrl = (url="") => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
-
-// helpers de extracción
-function extractText(rich) {
-  if (!rich || !Array.isArray(rich)) return "";
-  return rich.map(t => t?.plain_text || "").join("").trim();
+/* ---------- helpers de propiedades ---------- */
+function firstKeyByType(props, type, prefer = []) {
+  for (const name of prefer) if (props[name]?.type === type) return name;
+  for (const [k, v] of Object.entries(props)) if (v?.type === type) return k;
+  return null;
 }
-function extractDate(val) {
-  const iso = val?.date?.start || val?.date?.end || null;
-  return iso || null;
+function anyKeysByType(props, type) {
+  return Object.entries(props)
+    .filter(([, v]) => v?.type === type)
+    .map(([k]) => k);
 }
-function extractMedia(props) {
-  // Tus 3 campos Files & media
-  const candidates = ["Attachment","Link","Canva Design","Image","Images"];
-  const media = [];
-  for (const name of candidates) {
-    const f = props[name];
-    if (!f || f.type !== "files" || !Array.isArray(f.files)) continue;
-    f.files.forEach(item => {
-      const url = item?.file?.url || item?.external?.url || "";
-      if (!url) return;
-      media.push({ type: isVideoUrl(url) ? "video" : "image", url });
-    });
-  }
-  return media;
-}
+const isVideo = (url = "") => /\.(mp4|mov|webm|m4v)(\?|$)/i.test(url);
+const text = rich => (Array.isArray(rich) ? rich.map(t => t?.plain_text || "").join("") : "") || "";
 
-// Construye filtro dinámico según tipo real de la propiedad en Notion
-function buildFilter(params, metaProps) {
+/* ---------- filtros dinámicos ---------- */
+function buildFilter(params, props) {
   const and = [];
 
-  const hideName = pickProp(metaProps, PROP.hide);
-  if (hideName) and.push({ property: hideName, checkbox: { equals: false } });
-
-  const archivedName = pickProp(metaProps, PROP.archived);
-  if (archivedName) and.push({ property: archivedName, checkbox: { equals: false } });
+  // Hide/Archived checkboxes si existen
+  const hideProp = Object.keys(props).find(k => props[k]?.type === "checkbox" && /hide|hidden/i.test(k));
+  const archProp = Object.keys(props).find(k => props[k]?.type === "checkbox" && /archiv/i.test(k));
+  if (hideProp) and.push({ property: hideProp, checkbox: { equals: false } });
+  if (archProp) and.push({ property: archProp, checkbox: { equals: false } });
 
   // Clients (relation)
-  const clientRel = pickProp(metaProps, PROP.clientRel);
+  const clientProp = firstKeyByType(props, "relation", ["Client", "PostClient"]);
   const clients = params.getAll("client").concat(params.getAll("clientId"));
-  if (clientRel && clients.length) {
-    and.push({ or: clients.map(id => ({ property: clientRel, relation: { contains: id } })) });
+  if (clientProp && clients.length) {
+    and.push({ or: clients.map(id => ({ property: clientProp, relation: { contains: id } })) });
   }
 
   // Projects (relation)
-  const projectRel = pickProp(metaProps, PROP.projectRel);
+  const projectProp = firstKeyByType(props, "relation", ["Project", "PostProject"]);
   const projects = params.getAll("project").concat(params.getAll("projectId"));
-  if (projectRel && projects.length) {
-    and.push({ or: projects.map(id => ({ property: projectRel, relation: { contains: id } })) });
+  if (projectProp && projects.length) {
+    and.push({ or: projects.map(id => ({ property: projectProp, relation: { contains: id } })) });
   }
 
   // Platforms (select o multi_select)
-  const platformProp = pickProp(metaProps, PROP.platform);
+  const platformProp =
+    firstKeyByType(props, "select", ["Platform", "Platforms"]) ||
+    firstKeyByType(props, "multi_select", ["Platforms", "Platform"]);
   const platforms = params.getAll("platform").concat(params.getAll("platforms"));
   if (platformProp && platforms.length) {
-    const t = metaProps[platformProp]?.type;
+    const t = props[platformProp]?.type;
     if (t === "select") {
       and.push({ or: platforms.map(v => ({ property: platformProp, select: { equals: v } })) });
     } else if (t === "multi_select") {
@@ -86,15 +58,15 @@ function buildFilter(params, metaProps) {
   }
 
   // Status (select)
-  const statusProp = pickProp(metaProps, PROP.status);
-  const statuses = params.getAll("status").concat(params.getAll("statuses"));
+  const statusProp = firstKeyByType(props, "select", ["Status", "Estado"]);
+  const statuses   = params.getAll("status").concat(params.getAll("statuses"));
   if (statusProp && statuses.length) {
     and.push({ or: statuses.map(v => ({ property: statusProp, select: { equals: v } })) });
   }
 
   // Owners (people)
-  const ownersProp = pickProp(metaProps, PROP.owners);
-  const owners = params.getAll("owner").concat(params.getAll("ownerId"));
+  const ownersProp = firstKeyByType(props, "people", ["Owner", "Owners"]);
+  const owners     = params.getAll("owner").concat(params.getAll("ownerId"));
   if (ownersProp && owners.length) {
     and.push({ or: owners.map(id => ({ property: ownersProp, people: { contains: id } })) });
   }
@@ -102,10 +74,25 @@ function buildFilter(params, metaProps) {
   return and.length ? { and } : undefined;
 }
 
+/* ---------- extracción de campos ---------- */
+function extractMediaFromPageProperties(p) {
+  // Junta TODOS los “files & media” que existan
+  const filesProps = Object.entries(p).filter(([, v]) => v?.type === "files");
+  const out = [];
+  for (const [, val] of filesProps) {
+    (val.files || []).forEach(item => {
+      const url = item?.file?.url || item?.external?.url || "";
+      if (!url) return;
+      out.push({ type: isVideo(url) ? "video" : "image", url });
+    });
+  }
+  return out;
+}
+
 export default async function handler(req, res) {
   try {
     if (req.method !== "GET") {
-      res.status(405).json({ ok:false, error:"Method not allowed" });
+      res.status(405).json({ ok: false, error: "Method not allowed" });
       return;
     }
 
@@ -113,17 +100,16 @@ export default async function handler(req, res) {
     const pageSize = Math.min(Number(searchParams.get("pageSize") || 12), 50);
     const cursor   = searchParams.get("cursor") || undefined;
 
-    const meta = await notion.databases.retrieve({ database_id: DB_ID });
+    const meta  = await notion.databases.retrieve({ database_id: DB_ID });
     const props = meta.properties;
 
     const filter = buildFilter(searchParams, props);
 
-    const dateName = pickProp(props, PROP.date);
-    const titleName = pickProp(props, PROP.title);
-    const pinnedName = pickProp(props, PROP.pinned);
+    const titleProp = firstKeyByType(props, "title", ["Name", "Post Name"]);
+    const dateProp  = firstKeyByType(props, "date",  ["Publish Date","Date","Publish"]);
 
-    const sorts = dateName
-      ? [{ property: dateName, direction: "descending" }]
+    const sorts = dateProp
+      ? [{ property: dateProp, direction: "descending" }]
       : [{ timestamp: "last_edited_time", direction: "descending" }];
 
     const resp = await notion.databases.query({
@@ -134,21 +120,38 @@ export default async function handler(req, res) {
       sorts
     });
 
-    const posts = resp.results.map(page => {
-      const p = page.properties;
-      const title = titleName ? extractText(p[titleName]?.title || p[titleName]?.rich_text) : page.id;
-      const date  = dateName ? extractDate(p[dateName]) : null;
-      const pinned = pinnedName ? !!p[pinnedName]?.checkbox : false;
-      const media = extractMedia(p);
-      const copyName = "Copy";
-      const copy = p[copyName]?.rich_text ? extractText(p[copyName].rich_text) : "";
-      return { id: page.id, title, date, pinned, copy, media };
+    const posts = resp.results.map(pg => {
+      const p = pg.properties;
+
+      const title =
+        (titleProp && text(p[titleProp]?.title || p[titleProp]?.rich_text)) ||
+        pg.id;
+
+      const date = dateProp
+        ? (p[dateProp]?.date?.start || p[dateProp]?.date?.end || null)
+        : null;
+
+      // pinned (checkbox opcional)
+      const pinKey = Object.keys(p).find(k => p[k]?.type === "checkbox" && /pin/i.test(k));
+      const pinned = pinKey ? !!p[pinKey]?.checkbox : false;
+
+      // copy (rich_text opcional)
+      const copyKey = Object.keys(p).find(k => p[k]?.type === "rich_text" && /copy|caption|texto/i.test(k));
+      const copy = copyKey ? text(p[copyKey]?.rich_text) : "";
+
+      const media = extractMediaFromPageProperties(p);
+
+      return { id: pg.id, title, date, pinned, copy, media };
     });
 
-    res.status(200).json({ ok: true, posts, next_cursor: resp.has_more ? resp.next_cursor : null });
+    res.status(200).json({
+      ok: true,
+      posts,
+      next_cursor: resp.has_more ? resp.next_cursor : null
+    });
 
   } catch (err) {
     console.error("grid error:", err);
-    res.status(200).json({ ok:false, error: String(err?.message || err) });
+    res.status(200).json({ ok: false, error: String(err?.message || err) });
   }
 }
