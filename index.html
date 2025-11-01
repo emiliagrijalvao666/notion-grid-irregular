@@ -2,752 +2,273 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Instagram Grid</title>
+    <title>IG Grid</title>
+    <link rel="stylesheet" href="/styles.css" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <style>
-      :root {
-        --bg: #f5f5f5;
-        --card-bg: #d9dfe5;
-        --radius: 0; /* cards cuadradas */
-        --gap: 1px;
-        --text: #111;
-        --white: #fff;
-      }
-
-      * {
-        box-sizing: border-box;
-      }
-
-      body {
-        margin: 0;
-        background: var(--bg);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: var(--text);
-      }
-
-      .wrap {
-        max-width: 1050px;
-        margin: 0 auto;
-        padding: 1.5rem 1rem 3.5rem;
-      }
-
-      .topbar {
-        display: flex;
-        gap: 0.75rem;
-        align-items: center;
-        justify-content: flex-start;
-        margin-bottom: 1rem;
-      }
-
-      .btn-refresh {
-        background: #0f172a;
-        color: #fff;
-        border: none;
-        outline: none;
-        padding: 0.5rem 1.5rem;
-        border-radius: 999px;
-        display: flex;
-        gap: 0.5rem;
-        align-items: center;
-        font-weight: 500;
-        cursor: pointer;
-      }
-
-      .filters-row {
-        display: flex;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-      }
-
-      .filter {
-        background: #fff;
-        border-radius: 999px;
-        border: 1px solid rgba(15, 23, 42, 0.06);
-        padding: 0.25rem 0.9rem;
-        display: flex;
-        align-items: center;
-        gap: 0.4rem;
-        cursor: pointer;
-      }
-
-      .filter select {
-        border: none;
-        outline: none;
-        background: transparent;
-        font-size: 0.78rem;
-      }
-
-      .grid {
-        margin-top: 1.5rem;
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: var(--gap);
-      }
-
-      .card {
-        background: var(--card-bg);
-        position: relative;
-        aspect-ratio: 4 / 3;
-        overflow: hidden;
-        border-radius: var(--radius);
-        cursor: pointer;
-      }
-
-      .card img,
-      .card video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        display: block;
-      }
-
-      .card-overlay {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(
-          180deg,
-          rgba(0, 0, 0, 0.5) 0%,
-          rgba(0, 0, 0, 0) 38%,
-          rgba(0, 0, 0, 0.55) 100%
-        );
-        opacity: 0;
-        transition: opacity 0.2s;
-        color: #fff;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-        padding: 0.5rem 0.6rem 0.5rem;
-      }
-
-      .card:hover .card-overlay {
-        opacity: 1;
-      }
-
-      .badge-row {
-        display: flex;
-        gap: 0.35rem;
-      }
-
-      .badge-icon {
-        width: 24px;
-        height: 24px;
-        background: rgba(0, 0, 0, 0.35);
-        border-radius: 999px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-      }
-
-      .card-title {
-        font-size: 0.8rem;
-        font-weight: 600;
-        line-height: 1.2;
-      }
-
-      .card-date {
-        font-size: 0.68rem;
-        opacity: 0.8;
-      }
-
-      .empty {
-        text-align: center;
-        padding: 4rem 1rem 2rem;
-        color: rgba(15, 23, 42, 0.4);
-        font-weight: 500;
-      }
-
-      .load-more {
-        display: block;
-        margin: 1.5rem auto 0;
-        background: #0f172a;
-        color: #fff;
-        border: none;
-        border-radius: 999px;
-        padding: 0.5rem 1.5rem;
-        cursor: pointer;
-      }
-
-      /* MODAL */
-      .modal {
-        position: fixed;
-        inset: 0;
-        background: rgba(15, 23, 42, 0.55);
-        display: none;
-        align-items: center;
-        justify-content: center;
-        z-index: 100;
-      }
-
-      .modal-content {
-        background: #fff;
-        width: min(900px, 92%);
-        max-height: 92vh;
-        border-radius: 18px;
-        overflow: hidden;
-        display: grid;
-        grid-template-columns: 3fr 2fr;
-      }
-
-      .modal-media {
-        background: #000;
-        position: relative;
-      }
-
-      .modal-media img,
-      .modal-media video {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-      }
-
-      .modal-info {
-        padding: 1rem 1.2rem 1.5rem;
-        overflow-y: auto;
-      }
-
-      .modal-close {
-        position: absolute;
-        top: 12px;
-        right: 12px;
-        background: rgba(0, 0, 0, 0.4);
-        border: none;
-        border-radius: 999px;
-        width: 30px;
-        height: 30px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        cursor: pointer;
-      }
-
-      .carousel-dots {
-        position: absolute;
-        bottom: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 6px;
-      }
-
-      .dot {
-        width: 7px;
-        height: 7px;
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.45);
-      }
-
-      .dot.active {
-        background: #fff;
-      }
-
-      .modal-controls {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        pointer-events: none;
-      }
-
-      .carousel-btn {
-        width: 35px;
-        height: 35px;
-        background: rgba(0, 0, 0, 0.35);
-        border-radius: 999px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        pointer-events: auto;
-        cursor: pointer;
-        margin: 0 8px;
-      }
-
-      /* mobile */
-      @media (max-width: 850px) {
-        .modal-content {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      @media (max-width: 700px) {
-        .grid {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-        }
-      }
-    </style>
   </head>
   <body>
-    <div class="wrap">
-      <div class="topbar">
-        <button class="btn-refresh" id="btnRefresh">
-          <span>
-            <!-- refresh icon -->
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M3 4v6h6"
-                stroke="white"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M21 20v-6h-6"
-                stroke="white"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M20.49 9A9 9 0 0 0 5.64 5.64L3 10"
-                stroke="white"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M3.51 15A9 9 0 0 0 18.36 18.36L21 14"
-                stroke="white"
-                stroke-width="1.6"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-          </span>
-          Refresh
-        </button>
-        <div class="filters-row">
-          <div class="filter">
-            <select id="filterClients">
-              <option value="all">All Clients</option>
-            </select>
-          </div>
-          <div class="filter">
-            <select id="filterProjects">
-              <option value="all">All Projects</option>
-            </select>
-          </div>
-          <div class="filter">
-            <select id="filterPlatforms">
-              <option value="all">All Platforms</option>
-            </select>
-          </div>
-          <div class="filter">
-            <select id="filterOwners">
-              <option value="all">All Owners</option>
-            </select>
-          </div>
-          <div class="filter">
-            <select id="filterStatus">
-              <option value="all">All Status</option>
-            </select>
-          </div>
+    <div class="app">
+      <header class="topbar">
+        <div class="topbar-left">
+          <!-- sin "Posts" -->
+        </div>
+        <button id="refreshBtn" class="refresh-btn">Refresh</button>
+      </header>
+
+      <div class="filters-row">
+        <select id="clientFilter" class="filter-pill">
+          <option value="all">All Clients</option>
+        </select>
+        <select id="projectFilter" class="filter-pill">
+          <option value="all">All Projects</option>
+        </select>
+        <select id="platformFilter" class="filter-pill">
+          <option value="all">All Platforms</option>
+        </select>
+        <select id="ownerFilter" class="filter-pill">
+          <option value="all">All Owners</option>
+        </select>
+        <select id="statusFilter" class="filter-pill">
+          <option value="all">All Status</option>
+        </select>
+      </div>
+
+      <div class="grid-wrapper">
+        <div id="postsGrid" class="posts-grid">
+          <div class="loading">Cargando…</div>
         </div>
       </div>
 
-      <div id="error" class="empty" style="display: none"></div>
-
-      <div id="grid" class="grid"></div>
-      <button id="btnLoadMore" class="load-more" style="display: none">
-        Load more
-      </button>
-    </div>
-
-    <!-- MODAL -->
-    <div id="modal" class="modal">
-      <div class="modal-content">
-        <div class="modal-media" id="modalMedia">
-          <button class="modal-close" id="modalClose">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path
-                d="M6 6l12 12M18 6L6 18"
-                stroke="white"
-                stroke-width="1.7"
-                stroke-linecap="round"
-              />
-            </svg>
-          </button>
-          <div class="modal-controls" id="modalControls">
-            <div class="carousel-btn" id="btnPrev">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M15 18l-6-6 6-6"
-                  stroke="white"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-            <div class="carousel-btn" id="btnNext">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M9 6l6 6-6 6"
-                  stroke="white"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
-              </svg>
-            </div>
-          </div>
-          <div class="carousel-dots" id="carouselDots"></div>
-        </div>
-        <div class="modal-info" id="modalInfo"></div>
-      </div>
+      <button id="loadMoreBtn" class="load-more">Load more</button>
     </div>
 
     <script>
-      const gridEl = document.getElementById("grid");
-      const errorEl = document.getElementById("error");
-      const btnLoadMore = document.getElementById("btnLoadMore");
+      // estado
+      let FILTER_DATA = {
+        clients: [],
+        projects: [],
+        platforms: [],
+        owners: [],
+        statuses: [],
+      };
+      let CURRENT_FILTERS = {
+        client: "all",
+        project: "all",
+        platform: "all",
+        owner: "all",
+        status: "all",
+      };
+      let PAGE_SIZE = 15;
 
-      const filterClients = document.getElementById("filterClients");
-      const filterProjects = document.getElementById("filterProjects");
-      const filterPlatforms = document.getElementById("filterPlatforms");
-      const filterOwners = document.getElementById("filterOwners");
-      const filterStatus = document.getElementById("filterStatus");
-
-      const modal = document.getElementById("modal");
-      const modalMedia = document.getElementById("modalMedia");
-      const modalInfo = document.getElementById("modalInfo");
-      const modalClose = document.getElementById("modalClose");
-      const carouselDots = document.getElementById("carouselDots");
-      const btnPrev = document.getElementById("btnPrev");
-      const btnNext = document.getElementById("btnNext");
-
-      let allPosts = [];
-      let visibleCount = 15;
-      let currentMediaIndex = 0;
-      let currentModalPost = null;
+      const clientSel = document.getElementById("clientFilter");
+      const projectSel = document.getElementById("projectFilter");
+      const platformSel = document.getElementById("platformFilter");
+      const ownerSel = document.getElementById("ownerFilter");
+      const statusSel = document.getElementById("statusFilter");
+      const postsGrid = document.getElementById("postsGrid");
+      const refreshBtn = document.getElementById("refreshBtn");
+      const loadMoreBtn = document.getElementById("loadMoreBtn");
 
       async function loadFilters() {
-        // ya los tienes en tu /api/filters.js
-        // aquí solo ejemplo:
         try {
-          const res = await fetch("/api/filters");
-          const data = await res.json();
-          if (!data.ok) return;
+          const resp = await fetch("/api/filters");
+          const data = await resp.json();
+          if (!data.ok) throw new Error(data.error);
+          FILTER_DATA = data;
 
           // clients
-          filterClients.innerHTML = '<option value="all">All Clients</option>';
+          clientSel.innerHTML = '<option value="all">All Clients</option>';
           data.clients.forEach((c) => {
             const opt = document.createElement("option");
             opt.value = c.id;
             opt.textContent = c.name;
-            filterClients.appendChild(opt);
+            clientSel.appendChild(opt);
           });
 
-          // projects
-          filterProjects.innerHTML = '<option value="all">All Projects</option>';
-          data.projects.forEach((p) => {
+          // projects (todos, luego filtramos según client)
+          renderProjectsForClient("all");
+
+          // platforms
+          platformSel.innerHTML = '<option value="all">All Platforms</option>';
+          data.platforms.forEach((p) => {
             const opt = document.createElement("option");
             opt.value = p.id;
             opt.textContent = p.name;
-            filterProjects.appendChild(opt);
-          });
-
-          // platforms
-          filterPlatforms.innerHTML =
-            '<option value="all">All Platforms</option>';
-          data.platforms.forEach((p) => {
-            const opt = document.createElement("option");
-            opt.value = p;
-            opt.textContent = p;
-            filterPlatforms.appendChild(opt);
+            platformSel.appendChild(opt);
           });
 
           // owners
-          filterOwners.innerHTML = '<option value="all">All Owners</option>';
+          ownerSel.innerHTML = '<option value="all">All Owners</option>';
           data.owners.forEach((o) => {
             const opt = document.createElement("option");
             opt.value = o.id;
             opt.textContent = o.name;
-            filterOwners.appendChild(opt);
+            ownerSel.appendChild(opt);
           });
 
-          // status
-          filterStatus.innerHTML = '<option value="all">All Status</option>';
+          // statuses
+          statusSel.innerHTML = '<option value="all">All Status</option>';
           data.statuses.forEach((s) => {
             const opt = document.createElement("option");
-            opt.value = s;
-            opt.textContent = s;
-            filterStatus.appendChild(opt);
+            opt.value = s.id;
+            opt.textContent = s.name;
+            statusSel.appendChild(opt);
           });
         } catch (err) {
-          console.warn("filters err", err);
+          console.error("Error cargando filtros:", err);
         }
       }
 
-      async function loadPosts() {
-        errorEl.style.display = "none";
-        gridEl.innerHTML = "Cargando...";
+      function renderProjectsForClient(clientId) {
+        projectSel.innerHTML = '<option value="all">All Projects</option>';
+        const allProjects = FILTER_DATA.projects || [];
+        const list =
+          clientId === "all"
+            ? allProjects
+            : allProjects.filter((p) => p.clientIds?.includes(clientId));
+        list.forEach((p) => {
+          const opt = document.createElement("option");
+          opt.value = p.id;
+          opt.textContent = p.name || "Sin nombre";
+          projectSel.appendChild(opt);
+        });
+      }
 
-        const q = new URLSearchParams({
-          client: filterClients.value,
-          project: filterProjects.value,
-          platform: filterPlatforms.value,
-          owner: filterOwners.value,
-          status: filterStatus.value,
-        }).toString();
-
-        const res = await fetch("/api/grid?" + q);
-        const text = await res.text();
-
-        let data;
-        try {
-          data = JSON.parse(text);
-        } catch (e) {
-          console.log("server sent non json:", text);
-          errorEl.style.display = "block";
-          errorEl.textContent = "Error inicial: " + text.slice(0, 90) + "...";
-          gridEl.innerHTML = "";
-          return;
+      async function loadPosts(reset = true) {
+        if (reset) {
+          postsGrid.innerHTML = '<div class="loading">Cargando…</div>';
         }
+
+        const params = new URLSearchParams({
+          client: CURRENT_FILTERS.client,
+          project: CURRENT_FILTERS.project,
+          platform: CURRENT_FILTERS.platform,
+          owner: CURRENT_FILTERS.owner,
+          status: CURRENT_FILTERS.status,
+          pageSize: PAGE_SIZE.toString(),
+        });
+
+        const resp = await fetch("/api/grid?" + params.toString());
+        const data = await resp.json();
 
         if (!data.ok) {
-          errorEl.style.display = "block";
-          errorEl.textContent = data.error;
-          gridEl.innerHTML = "";
+          postsGrid.innerHTML =
+            '<div class="error">No se pudieron cargar los posts.</div>';
           return;
         }
 
-        allPosts = data.posts || [];
-        visibleCount = 15;
-        renderPosts();
-      }
+        const { posts } = data;
 
-      function renderPosts() {
-        gridEl.innerHTML = "";
-        if (!allPosts.length) {
-          gridEl.innerHTML = "";
-          errorEl.style.display = "block";
-          errorEl.textContent = "No content";
-          btnLoadMore.style.display = "none";
+        if (reset) postsGrid.innerHTML = "";
+
+        if (!posts.length) {
+          postsGrid.innerHTML =
+            '<div class="no-content">No content</div>';
           return;
         }
-        errorEl.style.display = "none";
 
-        const toShow = allPosts.slice(0, visibleCount);
+        posts.forEach((post) => {
+          const card = document.createElement("article");
+          card.className = "post-card";
 
-        toShow.forEach((post) => {
-          const card = document.createElement("div");
-          card.className = "card";
+          const firstMedia = post.media?.[0];
 
-          const main = post.media && post.media.length ? post.media[0] : null;
-
-          if (main) {
-            if (main.kind === "video") {
-              const v = document.createElement("video");
-              v.src = main.url;
-              v.muted = true;
-              v.playsInline = true;
-              v.autoplay = true;
-              v.loop = true;
-              card.appendChild(v);
-            } else {
-              const img = document.createElement("img");
-              img.src = main.url;
-              card.appendChild(img);
-            }
+          if (firstMedia) {
+            card.style.backgroundImage = `url(${firstMedia.url})`;
+          } else {
+            card.classList.add("no-image");
+            card.textContent = "No content";
           }
 
+          // overlay info
           const overlay = document.createElement("div");
-          overlay.className = "card-overlay";
+          overlay.className = "overlay";
 
-          // badges
-          const badgeRow = document.createElement("div");
-          badgeRow.className = "badge-row";
+          const title = document.createElement("div");
+          title.className = "title";
+          title.textContent = post.title;
+
+          const date = document.createElement("div");
+          date.className = "date";
+          date.textContent = post.date ? post.date : "";
+
+          overlay.appendChild(title);
+          overlay.appendChild(date);
 
           // pin
           if (post.pinned) {
-            const b = document.createElement("div");
-            b.className = "badge-icon";
-            b.innerHTML = `
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M9 3l6 6-2 2-6-6 2-2zm-4 8l3 3-3 3 3 3-1 1-4-4 1-1 1 1 2-2-1-1 1-1z" stroke="white" stroke-width="1.3" />
-              </svg>
-            `;
-            badgeRow.appendChild(b);
+            const pin = document.createElement("div");
+            pin.className = "pin-icon";
+            pin.textContent = "📌";
+            card.appendChild(pin);
           }
 
-          // video
-          const hasVideo =
-            post.media && post.media.some((m) => m.kind === "video");
-          if (hasVideo) {
-            const b = document.createElement("div");
-            b.className = "badge-icon";
-            b.innerHTML = `
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <path d="M9 8l6 4-6 4V8z" fill="white"/>
-              </svg>
-            `;
-            badgeRow.appendChild(b);
+          // video icon
+          if (firstMedia && firstMedia.kind === "video") {
+            const vid = document.createElement("div");
+            vid.className = "video-icon";
+            vid.textContent = "▶";
+            card.appendChild(vid);
           }
 
-          // multiple
+          // carrusel (si hay más de 1 media)
           if (post.media && post.media.length > 1) {
-            const b = document.createElement("div");
-            b.className = "badge-icon";
-            // icono tipo IG de carrusel (2 layers)
-            b.innerHTML = `
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                <rect x="6" y="7" width="9" height="9" rx="2" stroke="white" stroke-width="1.35"/>
-                <rect x="9" y="10" width="9" height="9" rx="2" stroke="white" stroke-width="1.35" opacity="0.6"/>
-              </svg>
-            `;
-            badgeRow.appendChild(b);
+            const car = document.createElement("div");
+            car.className = "carousel-icon";
+            car.textContent = "⋯";
+            card.appendChild(car);
           }
-
-          overlay.appendChild(badgeRow);
-
-          // title/date
-          const t = document.createElement("div");
-          const date = post.date ? new Date(post.date) : null;
-          const short =
-            date &&
-            date.toLocaleDateString("en-US", {
-              month: "short",
-              day: "2-digit",
-            });
-
-          t.innerHTML = `
-            <div class="card-title">${post.title || "Sin nombre"}</div>
-            <div class="card-date">${short || ""}</div>
-          `;
-          overlay.appendChild(t);
 
           card.appendChild(overlay);
-
-          card.addEventListener("click", () => openModal(post));
-          gridEl.appendChild(card);
+          postsGrid.appendChild(card);
         });
-
-        // show / hide load more
-        if (allPosts.length > visibleCount) {
-          btnLoadMore.style.display = "block";
-        } else {
-          btnLoadMore.style.display = "none";
-        }
       }
 
-      btnLoadMore.addEventListener("click", () => {
-        visibleCount += 15;
-        renderPosts();
+      // listeners
+      clientSel.addEventListener("change", (e) => {
+        const val = e.target.value;
+        CURRENT_FILTERS.client = val;
+        // actualizar projects según client
+        renderProjectsForClient(val);
+        // y reset project
+        CURRENT_FILTERS.project = "all";
+        loadPosts(true);
       });
 
-      function openModal(post) {
-        currentModalPost = post;
-        currentMediaIndex = 0;
-        modal.style.display = "flex";
-        renderModalMedia();
-        renderModalInfo();
-      }
-
-      function renderModalMedia() {
-        const post = currentModalPost;
-        const media = post.media || [];
-        const current = media[currentMediaIndex];
-
-        modalMedia.style.background = "#000";
-        // limpiar img/video previos excepto controls/dots/close
-        Array.from(modalMedia.children).forEach((ch) => {
-          if (
-            ch !== modalClose &&
-            ch !== carouselDots &&
-            ch !== document.getElementById("modalControls")
-          ) {
-            modalMedia.removeChild(ch);
-          }
-        });
-
-        if (current) {
-          if (current.kind === "video") {
-            const v = document.createElement("video");
-            v.src = current.url;
-            v.controls = true;
-            v.style.width = "100%";
-            v.style.height = "100%";
-            v.style.objectFit = "cover";
-            modalMedia.insertBefore(v, carouselDots);
-          } else {
-            const img = document.createElement("img");
-            img.src = current.url;
-            img.style.width = "100%";
-            img.style.height = "100%";
-            img.style.objectFit = "cover";
-            modalMedia.insertBefore(img, carouselDots);
-          }
-        }
-
-        // dots
-        carouselDots.innerHTML = "";
-        media.forEach((m, idx) => {
-          const d = document.createElement("div");
-          d.className = "dot" + (idx === currentMediaIndex ? " active" : "");
-          d.addEventListener("click", () => {
-            currentMediaIndex = idx;
-            renderModalMedia();
-          });
-          carouselDots.appendChild(d);
-        });
-
-        // mostrar/ocultar controls
-        if (media.length > 1) {
-          document.getElementById("modalControls").style.display = "flex";
-        } else {
-          document.getElementById("modalControls").style.display = "none";
-        }
-      }
-
-      function renderModalInfo() {
-        const p = currentModalPost;
-        modalInfo.innerHTML = `
-          <h3 style="margin-top:0">${p.title || "Sin nombre"}</h3>
-          <p style="font-size:.8rem; opacity:.6; margin-top:-.3rem">${p.date || ""}</p>
-          <div style="white-space:pre-wrap; font-size:.85rem; margin-top:1rem">${p.copy || ""}</div>
-        `;
-      }
-
-      modalClose.addEventListener("click", () => {
-        modal.style.display = "none";
-      });
-      modal.addEventListener("click", (e) => {
-        if (e.target === modal) modal.style.display = "none";
+      projectSel.addEventListener("change", (e) => {
+        CURRENT_FILTERS.project = e.target.value;
+        loadPosts(true);
       });
 
-      btnPrev.addEventListener("click", () => {
-        if (!currentModalPost) return;
-        const media = currentModalPost.media || [];
-        if (!media.length) return;
-        currentMediaIndex =
-          (currentMediaIndex - 1 + media.length) % media.length;
-        renderModalMedia();
-      });
-      btnNext.addEventListener("click", () => {
-        if (!currentModalPost) return;
-        const media = currentModalPost.media || [];
-        if (!media.length) return;
-        currentMediaIndex = (currentMediaIndex + 1) % media.length;
-        renderModalMedia();
+      platformSel.addEventListener("change", (e) => {
+        CURRENT_FILTERS.platform = e.target.value;
+        loadPosts(true);
       });
 
-      document.getElementById("btnRefresh").addEventListener("click", () => {
-        loadPosts();
+      ownerSel.addEventListener("change", (e) => {
+        CURRENT_FILTERS.owner = e.target.value;
+        loadPosts(true);
       });
 
-      // filters change
-      [
-        filterClients,
-        filterProjects,
-        filterPlatforms,
-        filterOwners,
-        filterStatus,
-      ].forEach((sel) => {
-        sel.addEventListener("change", () => loadPosts());
+      statusSel.addEventListener("change", (e) => {
+        CURRENT_FILTERS.status = e.target.value;
+        loadPosts(true);
+      });
+
+      refreshBtn.addEventListener("click", () => {
+        loadPosts(true);
+      });
+
+      loadMoreBtn.addEventListener("click", () => {
+        PAGE_SIZE += 15;
+        loadPosts(true);
       });
 
       // init
-      loadFilters().then(loadPosts);
+      (async function init() {
+        await loadFilters();
+        await loadPosts(true);
+      })();
     </script>
   </body>
 </html>
