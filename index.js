@@ -43,7 +43,21 @@ const state = {
   loading: false,
   modal: { open:false, assets:[], index:0, lastFocus:null },
 };
+
 const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"];
+
+/* ----- Init guards (evita UI muerta) ----- */
+(function guardRequired(){
+  const required = [
+    'grid','btnMore','btnRefresh','btnClear','badgeCount','overlay','toasts','filters',
+    'fClient','fProject','fPlatform','fOwner','fStatus','mClient','mProject','mPlatform','mOwner','mStatus',
+    'modal','modalBackdrop','modalClose','vStage','vPrev','vNext','vDots','vCopy'
+  ];
+  const missing = required.filter(id => !document.getElementById(id));
+  if (missing.length){
+    console.error('Faltan elementos en HTML:', missing);
+  }
+})();
 
 /* ===== Boot ===== */
 init();
@@ -93,7 +107,7 @@ async function loadFilters(){
 
     state.filtersData = normalizeFilters(json);
 
-    // Nota: owners -> value = id (para people.contains)
+    // Nota: owners -> value = id (para que Notion acepte people.contains)
     renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true,  searchable:true});
     renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true,  searchable:true});
     renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true,  searchable:true});
@@ -264,10 +278,28 @@ function closeAllSelects(){
 }
 
 function clearFilters(){
+  // 1) limpiar estado
   state.selected = { clients:[], projects:[], platforms:[], owners:[], statuses:[] };
+
+  // 2) re-pintar TODOS los menús desde la data base
+  renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true, searchable:true});
+  renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true, searchable:true});
+  renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true, searchable:true});
+  renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id, {multi:true, searchable:true, initials:true});
+  renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name, {multi:false, searchable:true});
+
+  // 3) resetear labels
+  setBtnText(els.fClient,   'All Clients');
+  setBtnText(els.fProject,  'All Projects');
+  setBtnText(els.fPlatform, 'All Platforms');
+  setBtnText(els.fStatus,   'All Status');
+  setOwnerBtnLabel();
+
+  // 4) UI limpia
+  closeAllSelects();
   updateButtonsText();
-  renderMenu(els.mProject, state.filtersData.projects, 'projects', it=>it.name, it=>it.id, {multi:true, searchable:true});
-  setBtnText(els.fProject, 'All Projects');
+
+  // 5) refrescar grid
   scheduleRefresh();
 }
 
@@ -374,7 +406,6 @@ function renderCard(p){
 
   const date = p.date ? fmtDate(p.date) : '';
 
-  // **NO mostramos copy en la card** (solo en el modal)
   return `
     <div class="card" data-id="${p.id}">
       ${ownerBadge}
@@ -451,7 +482,6 @@ function openModal(id){
   state.modal.index = 0;
   state.modal.lastFocus = document.activeElement;
 
-  // Copy solo aquí
   const copy = (post.copy||'').trim();
   els.vCopy.textContent = copy;
   els.vCopy.hidden = !copy;
