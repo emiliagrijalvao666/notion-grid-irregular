@@ -1,135 +1,181 @@
 // api/filters.js
 import { notion } from './_notion.js';
 
-const CONTENT_DB_ID = process.env.NOTION_DB_ID || process.env.CONTENT_DB_ID;
-const PROJECTS_DB_ID = process.env.NOTION_DB_PROJECTS || process.env.PROJECTS_DB_ID;
+const CONTENT_DB_ID    = process.env.NOTION_DB_ID || process.env.CONTENT_DB_ID || process.env.NOTION_DATABASE_ID;
+const CLIENTS_DB_ID    = process.env.NOTION_DB_CLIENTS || process.env.NOTION_DB_BRANDS || process.env.NOTION_DB_CLIENT || process.env.NOTION_DB_BRAND;
+const PROJECTS_DB_ID   = process.env.NOTION_DB_PROJECTS;
 
-const TITLE_CANDS_PROJECTS = ['Name','Project name','Aq Project name','Project','Título','Title'];
-const REL_CLIENTS_CANDS   = ['Client','Clients','Brand','Brands','PostClient'];
+const TITLE_CANDS      = ['Name','Nombre','Title','Título'];
+const PLATFORM_CANDS   = ['Platform','Platforms'];
+const STATUS_CANDS     = ['Status','Estado','State'];
+const REL_CLIENTS_CANDS  = ['Client','Clients','Brand','Brands','PostClient'];
+const REL_PROJECTS_CANDS = ['Project','Projects','PostProject'];
 
-const REL_PROJECT_CANDS_CONTENT = ['Project','PostProject'];
-const REL_CLIENT_CANDS_CONTENT  = ['Client','PostClient'];
-const PLATFORM_CANDS            = ['Platform','Platforms'];
-const STATUS_CANDS              = ['Status','Estado','State'];
-const OWNER_PEOPLE_CANDS        = ['Owner','Owners','Responsable','Asignado a'];
+export default async function handler(req, res){
+  try{
+    if (!CONTENT_DB_ID) return res.json({ ok:false, error:'Missing NOTION_DB_ID / CONTENT_DB_ID' });
 
-export default async function handler(req, res) {
-  try {
-    if (!CONTENT_DB_ID) return res.json({ ok:false, error:'Missing NOTION_DB_ID/CONTENT_DB_ID' });
+    // cache CDN (5 min; SWR 10 min)
+    res.setHeader('Cache-Control','public, s-maxage=300, stale-while-revalidate=600');
 
-    // 1) Platforms + Statuses del Content DB (baratos y estables)
+    const type = String(req.query.type||'all');
+
+    // — Schema (platforms/status) siempre viene del Content DB meta
     const meta = await notion.databases.retrieve({ database_id: CONTENT_DB_ID });
-    const platforms = enumFrom(meta, PLATFORM_CANDS);
-    const statuses  = enumFrom(meta, STATUS_CANDS);
+    const platformKey = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
+    const statusKey   = firstExisting(meta, STATUS_CANDS, 'select');
 
-    // 2) Owners (people únicos presentes en el Content DB)
-    const owners = await collectPeople(CONTENT_DB_ID, OWNER_PEOPLE_CANDS);
+    const platforms = platformKey ? (meta.properties[platformKey].multi_select?.options||[]).map(o=>o.name).filter(Boolean) : [];
+    const statuses  = statusKey   ? (meta.properties[statusKey].select?.options||[]).map(o=>o.name).filter(Boolean)   : [];
 
-    // 3) Clients (del Content DB por relación o del propio DB si existe column)
-    const clients = await collectRelatedFromContent(CONTENT_DB_ID, REL_CLIENT_CANDS_CONTENT);
+    if (type === 'schema'){
+      return res.json({ ok:true, platforms, statuses });
+    }
 
-    // 4) Projects (UNIÓN de Projects DB + relaciones vistas en Content)
-    const fromProjectsDB = PROJECTS_DB_ID
-      ? await collectProjectsDB(PROJECTS_DB_ID)
-      : [];
-    const fromContent    = await collectProjectsFromContent(CONTENT_DB_ID, REL_PROJECT_CANDS_CONTENT, REL_CLIENT_CANDS_CONTENT);
+    // — Clients
+    let clients = [];
+    if (CLIENTS_DB_ID){
+      clients = await loadIdNameList(CLIENTS_DB_ID);
+    } else {
+      // Fallback: obtiene ids de la relación y resuelve títulos de las páginas
+      const relKey = firstExisting(meta, REL_CLIENTS_CANDS, 'relation');
+      clients = relKey ? await collectRelationNames(CONTENT_DB_ID, relKey) : [];
+    }
 
-    // unir por id y name
-    const map = new Map();
-    [...fromProjectsDB, ...fromContent].forEach(p => {
-      const k = p.id || `name:${p.name}`;
-      if (!map.has(k)) map.set(k, { id:p.id, name:p.name, clientIds: new Set(p.clientIds||[]) });
-      else {
-        const cur = map.get(k);
-        p.clientIds?.forEach(id => cur.clientIds.add(id));
-      }
-    });
-    const projects = [...map.values()].map(p => ({ ...p, clientIds: [...p.clientIds] }));
+    if (type === 'clients'){
+      return res.json({ ok:true, clients });
+    }
 
-    res.json({ ok:true, platforms, statuses, owners, clients, projects });
-  } catch (e) {
-    res.json({ ok:false, error: e.message || 'filters failed' });
+    // — Projects
+    let projects = [];
+    if (PROJECTS_DB_ID){
+      projects = await loadIdNameList(PROJECTS_DB_ID, /*includeClientIds=*/true);
+    } else {
+      const relKey = firstExisting(meta, REL_PROJECTS_CANDS, 'relation');
+      projects = relKey ? await collectRelationNames(CONTENT_DB_ID, relKey) : [];
+    }
+
+    if (type === 'projects'){
+      return res.json({ ok:true, projects });
+    }
+
+    // — all (completo)
+    return res.json({ ok:true, platforms, statuses, owners: await ownersFromContent(meta), clients, projects });
+
+  } catch (e){
+    return res.json({ ok:false, error: e.message || 'filters failed' });
   }
 }
 
-// ---------- helpers ----------
-function enumFrom(meta, candidates) {
-  for (const key of candidates) {
+/* ---------- helpers ---------- */
+
+function firstExisting(meta, candidates, type){
+  for (const key of candidates){
     const prop = meta.properties[key];
-    if (prop?.type === 'select' && prop.select?.options)  return prop.select.options.map(o=>o.name);
-    if (prop?.type === 'multi_select' && prop.multi_select?.options) return prop.multi_select.options.map(o=>o.name);
+    if (!prop) continue;
+    if (!type) return key;
+    if (prop.type === type) return key;
   }
-  return [];
+  return undefined;
 }
 
-async function collectPeople(dbId, cands) {
+async function ownersFromContent(meta){
+  // Owners salen directamente de las opciones people que ya usas en el grid (ID es crítico)
+  const OWNER_CANDS = ['Owner','Owners','Responsable','Asignado a'];
+  const ownerKey = firstExisting(meta, OWNER_CANDS, 'people');
+  if (!ownerKey) return [];
+  // No hay catálogo de owners en meta, así que los resolvemos sobre los posts más recientes (100) para poblar el menú.
+  const resp = await notion.databases.query({
+    database_id: meta.id,
+    page_size: 100,
+    sorts: [{ timestamp:'last_edited_time', direction:'descending' }]
+  });
+  const set = new Map(); // id -> name
+  for (const page of resp.results){
+    const pp = page.properties[ownerKey];
+    if (pp?.type!=='people') continue;
+    for (const p of (pp.people||[])){
+      const id = p.id;
+      const name = p.name || p.person?.email || 'Unknown';
+      if (id && !set.has(id)) set.set(id, name);
+    }
+  }
+  return Array.from(set.entries()).map(([id,name])=>({ id, name }));
+}
+
+async function loadIdNameList(dbId, includeClientIds=false){
+  // Detecta la key de título
   const meta = await notion.databases.retrieve({ database_id: dbId });
-  const key  = cands.find(k => meta.properties[k]?.type === 'people');
-  if (!key) return [];
-  const out = new Map();
-  for await (const page of paginate(dbId, {})) {
-    const people = page.properties[key]?.people || [];
-    people.forEach(p => out.set(p.id, { id:p.id, name: p.name || p.person?.email || 'Unknown' }));
-  }
-  return [...out.values()];
-}
-
-async function collectRelatedFromContent(dbId, relCands) {
-  const meta = await notion.databases.retrieve({ database_id: dbId });
-  const key = relCands.find(k => meta.properties[k]?.type === 'relation');
-  if (!key) return [];
-  const out = new Map();
-  for await (const page of paginate(dbId, {})) {
-    const rels = page.properties[key]?.relation || [];
-    rels.forEach(r => out.set(r.id, { id:r.id, name: r.id })); // si luego quieres nombres, puedes mapearlos
-  }
-  return [...out.values()];
-}
-
-async function collectProjectsDB(projectsDbId) {
-  const meta = await notion.databases.retrieve({ database_id: projectsDbId });
-  const titleKey = TITLE_CANDS_PROJECTS.find(k => meta.properties[k]?.type === 'title');
-  const relClientKey = REL_CLIENTS_CANDS.find(k => meta.properties[k]?.type === 'relation');
-
-  const out = [];
-  for await (const page of paginate(projectsDbId, {})) {
-    const name = getTitle(page.properties[titleKey]) || 'Untitled';
-    const clientIds = (page.properties[relClientKey]?.relation || []).map(r => r.id);
-    out.push({ id: page.id, name, clientIds });
-  }
+  const titleKey = getTitleKey(meta);
+  let cur; const out = [];
+  do{
+    const resp = await notion.databases.query({ database_id: dbId, start_cursor: cur, page_size: 100 });
+    for (const page of resp.results){
+      const name = readTitle(page.properties[titleKey]) || 'Untitled';
+      const item = { id: page.id, name };
+      if (includeClientIds){
+        // intenta mapear relación con Clients si existe
+        const relKey = firstExisting(meta, REL_CLIENTS_CANDS, 'relation');
+        if (relKey){
+          const rel = page.properties[relKey];
+          const ids = (rel?.relation||[]).map(r=>r.id);
+          item.clientIds = ids;
+        } else {
+          item.clientIds = [];
+        }
+      }
+      out.push(item);
+    }
+    cur = resp.has_more ? resp.next_cursor : undefined;
+  } while (cur);
   return out;
 }
 
-async function collectProjectsFromContent(contentDbId, projRelCands, cliRelCands) {
-  const meta = await notion.databases.retrieve({ database_id: contentDbId });
-  const projKey = projRelCands.find(k => meta.properties[k]?.type === 'relation');
-  const cliKey  = cliRelCands.find(k  => meta.properties[k]?.type === 'relation');
-  if (!projKey) return [];
-
-  const map = new Map();
-  for await (const page of paginate(contentDbId, {})) {
-    const proj = page.properties[projKey]?.relation || [];
-    const clis = page.properties[cliKey]?.relation || [];
-    const clientIds = clis.map(r => r.id);
-    proj.forEach(r => {
-      if (!map.has(r.id)) map.set(r.id, { id:r.id, name:r.id, clientIds: new Set() });
-      const it = map.get(r.id);
-      clientIds.forEach(id => it.clientIds.add(id));
-    });
+async function collectRelationNames(dbId, relKey){
+  // Escanea posts recientes (200) y junta IDs únicos de la relación
+  const resp = await notion.databases.query({
+    database_id: dbId,
+    page_size: 200,
+    sorts: [{ timestamp:'last_edited_time', direction:'descending' }]
+  });
+  const ids = new Set();
+  for (const page of resp.results){
+    const rel = page.properties?.[relKey];
+    (rel?.relation||[]).forEach(r=> ids.add(r.id));
   }
-  return [...map.values()].map(p => ({ ...p, clientIds: [...p.clientIds] }));
+  // Resuelve nombres por lotes
+  const items = [];
+  for (const id of ids){
+    try{
+      const pg = await notion.pages.retrieve({ page_id: id });
+      const name = readAnyTitle(pg.properties) || 'Untitled';
+      items.push({ id, name });
+    }catch{}
+  }
+  return items;
 }
 
-function getTitle(prop) {
-  if (!prop || prop.type !== 'title') return '';
-  return (prop.title || []).map(t => t.plain_text).join('').trim();
+function getTitleKey(meta){
+  for (const [k,v] of Object.entries(meta.properties||{})){
+    if (v.type === 'title') return k;
+  }
+  // fallback
+  for (const cand of TITLE_CANDS){
+    if (meta.properties[cand]?.type==='title') return cand;
+  }
+  return TITLE_CANDS.find(k => meta.properties[k]) || Object.keys(meta.properties||{})[0];
 }
 
-async function* paginate(database_id, body) {
-  let cursor = undefined;
-  do {
-    const resp = await notion.databases.query({ database_id, start_cursor: cursor, page_size: 50, ...body });
-    for (const r of resp.results) yield r;
-    cursor = resp.has_more ? resp.next_cursor : undefined;
-  } while (cursor);
+function readTitle(prop){
+  if (!prop || prop.type!=='title') return '';
+  return (prop.title||[]).map(t=>t.plain_text).join('').trim();
+}
+function readAnyTitle(props={}){
+  // encuentra la primera propiedad de tipo "title"
+  for (const [k,v] of Object.entries(props)){
+    if (v.type==='title') return readTitle(v);
+  }
+  // fallback grosero
+  const first = Object.values(props)[0];
+  return readTitle(first);
 }
