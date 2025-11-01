@@ -1,3 +1,3 @@
-export default function handler(req, res) {
-  res.status(200).json({ ok: true, msg: "notion-grid alive" });
+export default function handler(req,res){
+  res.status(200).json({ ok:true, ts: Date.now() });
 }
