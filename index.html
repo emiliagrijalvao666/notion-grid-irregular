@@ -1,249 +1,250 @@
 <!DOCTYPE html>
 <html lang="es">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Posts</title>
-  <link rel="stylesheet" href="/styles.css" />
-</head>
-<body>
-  <header class="topbar">
-    <h1 class="title">Posts <span id="count"></span></h1>
-    <div class="actions">
-      <button id="refreshBtn">Refresh</button>
-      <input id="search" placeholder="Buscar..." />
+  <head>
+    <meta charset="UTF-8" />
+    <title>Posts</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <h1 class="page-title">Posts <span id="postCount"></span></h1>
+
+        <div class="actions">
+          <button id="refreshBtn" class="btn round">Refresh</button>
+          <input id="searchInput" class="search" type="text" placeholder="Buscar..." />
+        </div>
+      </header>
+
+      <div class="filters">
+        <select id="fClients" class="filter">
+          <option value="all">All Clients</option>
+        </select>
+
+        <select id="fProjects" class="filter">
+          <option value="all">All Projects</option>
+        </select>
+
+        <select id="fBrands" class="filter" disabled>
+          <option value="all">All Brands</option>
+        </select>
+
+        <select id="fPlatforms" class="filter">
+          <option value="all">All Platforms</option>
+        </select>
+
+        <select id="fOwners" class="filter">
+          <option value="all">All Owners</option>
+        </select>
+
+        <select id="fStatus" class="filter">
+          <option value="publishedOnly">Published Only</option>
+          <option value="all">All Status</option>
+        </select>
+      </div>
+
+      <main>
+        <div id="grid" class="grid"></div>
+        <button id="loadMore" class="btn load">Load more</button>
+      </main>
     </div>
-  </header>
 
-  <section class="filters">
-    <select id="fClient"><option value="">All Clients</option></select>
-    <select id="fProject"><option value="">All Projects</option></select>
-    <select id="fBrand"><option value="">All Brands</option></select>
-    <select id="fPlatform"><option value="">All Platforms</option></select>
-    <select id="fStatus">
-      <option value="published" selected>Published Only</option>
-      <option value="all">All Status</option>
-    </select>
-  </section>
+    <script>
+      const state = {
+        allPosts: [],
+        visiblePosts: [],
+        pageSize: 24,
+        filters: {
+          client: "all",
+          project: "all",
+          brand: "all",
+          platform: "all",
+          owner: "all",
+          status: "publishedOnly",
+          search: ""
+        }
+      };
 
-  <main>
-    <div id="grid" class="grid"></div>
-    <div class="center">
-      <button id="loadMore" style="display:none;">Load more</button>
-    </div>
-  </main>
+      const els = {
+        grid: document.getElementById("grid"),
+        postCount: document.getElementById("postCount"),
+        fClients: document.getElementById("fClients"),
+        fProjects: document.getElementById("fProjects"),
+        fBrands: document.getElementById("fBrands"),
+        fPlatforms: document.getElementById("fPlatforms"),
+        fOwners: document.getElementById("fOwners"),
+        fStatus: document.getElementById("fStatus"),
+        refreshBtn: document.getElementById("refreshBtn"),
+        searchInput: document.getElementById("searchInput"),
+        loadMore: document.getElementById("loadMore")
+      };
 
-  <!-- Modal -->
-  <div id="modal" class="modal hidden" tabindex="-1">
-    <div class="modal-backdrop"></div>
-    <div class="modal-content">
-      <button id="modalClose" class="modal-close" aria-label="Close">×</button>
-      <div id="modalMedia" class="modal-media"></div>
-      <div id="modalCopy" class="modal-copy"></div>
-      <div id="modalInfo" class="modal-info"></div>
-    </div>
-  </div>
+      async function fetchData() {
+        const qs = new URLSearchParams();
+        if (state.filters.status) qs.set("status", state.filters.status);
+        const res = await fetch("/api/grid?" + qs.toString());
+        const data = await res.json();
+        if (!data.ok) {
+          els.grid.innerHTML = `<div class="error">${data.error}</div>`;
+          return;
+        }
+        state.allPosts = data.posts || [];
+        buildFilterOptions(data.filters || {});
+        applyFilters();
+      }
 
-<script>
-const state = {
-  status: 'published',
-  client: '', project: '', brand: '', platform: '', owner: '',
-  q: '',
-  limit: 12,
-  offset: 0,
-  total: 0
-};
+      function buildFilterOptions(f) {
+        // clients
+        els.fClients.innerHTML = `<option value="all">All Clients</option>`;
+        (f.clients || []).forEach((c) => {
+          els.fClients.innerHTML += `<option value="${c}">${c}</option>`;
+        });
 
-const els = {
-  count: document.getElementById('count'),
-  grid: document.getElementById('grid'),
-  loadMore: document.getElementById('loadMore'),
-  refresh: document.getElementById('refreshBtn'),
-  search: document.getElementById('search'),
-  fStatus: document.getElementById('fStatus'),
-  fClient: document.getElementById('fClient'),
-  fProject: document.getElementById('fProject'),
-  fBrand: document.getElementById('fBrand'),
-  fPlatform: document.getElementById('fPlatform'),
-  modal: document.getElementById('modal'),
-  modalClose: document.getElementById('modalClose'),
-  modalMedia: document.getElementById('modalMedia'),
-  modalCopy: document.getElementById('modalCopy'),
-  modalInfo: document.getElementById('modalInfo')
-};
+        // projects
+        els.fProjects.innerHTML = `<option value="all">All Projects</option>`;
+        (f.projects || []).forEach((p) => {
+          els.fProjects.innerHTML += `<option value="${p}">${p}</option>`;
+        });
 
-function qs(obj) {
-  const p = new URLSearchParams();
-  if (obj.status) p.set('status', obj.status);
-  if (obj.client) p.set('client', obj.client);
-  if (obj.project) p.set('project', obj.project);
-  if (obj.brand) p.set('brand', obj.brand);
-  if (obj.platform) p.set('platform', obj.platform);
-  if (obj.owner) p.set('owner', obj.owner);
-  if (obj.q) p.set('q', obj.q);
-  p.set('limit', obj.limit);
-  p.set('offset', obj.offset);
-  return p.toString();
-}
+        // brands (solo activamos si hay brands)
+        els.fBrands.innerHTML = `<option value="all">All Brands</option>`;
+        if ((f.brands || []).length) {
+          els.fBrands.removeAttribute("disabled");
+          (f.brands || []).forEach((b) => {
+            els.fBrands.innerHTML += `<option value="${b}">${b}</option>`;
+          });
+        } else {
+          els.fBrands.setAttribute("disabled", "true");
+        }
 
-function optionize(select, items, label = 'name') {
-  // Mantiene "All ..." como primer option
-  const first = select.querySelector('option');
-  select.innerHTML = '';
-  if (first) select.appendChild(first);
-  (items || []).forEach(it => {
-    const opt = document.createElement('option');
-    const name = (typeof it === 'string') ? it : it.name;
-    const count = (typeof it === 'object' && 'count' in it) ? it.count : null;
-    opt.value = name;
-    opt.textContent = count != null ? `${name} (${count})` : name;
-    select.appendChild(opt);
-  });
-}
+        // platforms
+        els.fPlatforms.innerHTML = `<option value="all">All Platforms</option>`;
+        (f.platforms || []).forEach((p) => {
+          els.fPlatforms.innerHTML += `<option value="${p}">${p}</option>`;
+        });
 
-function card(post) {
-  const div = document.createElement('div');
-  div.className = 'card';
-  div.tabIndex = 0;
+        // owners
+        els.fOwners.innerHTML = `<option value="all">All Owners</option>`;
+        (f.owners || []).forEach((o) => {
+          els.fOwners.innerHTML += `<option value="${o}">${o}</option>`;
+        });
+      }
 
-  const img = document.createElement('div');
-  img.className = 'thumb';
-  const url = (post.assets && post.assets[0] && post.assets[0].url) ? post.assets[0].url : '';
-  if (url) {
-    img.style.backgroundImage = `url('${url}')`;
-  } else {
-    img.classList.add('thumb-empty');
-    img.textContent = 'No image';
-  }
+      function applyFilters() {
+        const {
+          client, project, brand,
+          platform, owner, status, search
+        } = state.filters;
 
-  const title = document.createElement('div');
-  title.className = 'card-title';
-  title.textContent = post.title || 'Untitled';
+        let list = [...state.allPosts];
 
-  const footer = document.createElement('div');
-  footer.className = 'card-footer';
-  footer.textContent = (post.date || '').slice(0, 10);
+        // filtro por client
+        if (client !== "all") {
+          list = list.filter(p => (p.clients || []).includes(client));
+        }
 
-  div.appendChild(img);
-  div.appendChild(title);
-  div.appendChild(footer);
+        // filtro por project
+        if (project !== "all") {
+          list = list.filter(p => (p.projectNames || []).includes(project));
+        }
 
-  div.addEventListener('click', () => openModal(post));
-  return div;
-}
+        // filtro por brand
+        if (brand !== "all") {
+          list = list.filter(p => (p.brands || []).includes(brand));
+        }
 
-function openModal(post) {
-  els.modalMedia.innerHTML = '';
-  els.modalCopy.textContent = '';
-  els.modalInfo.textContent = '';
+        // filtro por platform
+        if (platform !== "all") {
+          list = list.filter(p => (p.platforms || []).includes(platform));
+        }
 
-  const url = (post.assets && post.assets[0] && post.assets[0].url) ? post.assets[0].url : '';
-  if (url && /\.(mp4|mov|webm)$/i.test(url)) {
-    const v = document.createElement('video');
-    v.src = url; v.controls = true;
-    els.modalMedia.appendChild(v);
-  } else if (url) {
-    const img = document.createElement('img');
-    img.src = url; img.alt = post.title || '';
-    els.modalMedia.appendChild(img);
-  } else {
-    const p = document.createElement('div');
-    p.className = 'modal-noimg';
-    p.textContent = 'No image';
-    els.modalMedia.appendChild(p);
-  }
+        // filtro por owner
+        if (owner !== "all") {
+          list = list.filter(p => (p.owners || []).includes(owner));
+        }
 
-  if (post.copy) {
-    const box = document.createElement('div');
-    box.className = 'copybox';
-    box.textContent = post.copy;
-    els.modalCopy.appendChild(box);
-  }
+        // search
+        if (search && search.trim()) {
+          const q = search.trim().toLowerCase();
+          list = list.filter(p =>
+            (p.title || "").toLowerCase().includes(q) ||
+            (p.copy || "").toLowerCase().includes(q)
+          );
+        }
 
-  const info = [];
-  if (post.title) info.push(post.title);
-  const meta = [];
-  if (post.date) meta.push(post.date.slice(0,10));
-  if (post.clients && post.clients.length) meta.push(post.clients.join(', '));
-  if (post.projectNames && post.projectNames.length) meta.push(post.projectNames.join(', '));
-  if (meta.length) info.push('· ' + meta.join(' · '));
-  els.modalInfo.textContent = info.join('\n');
+        state.visiblePosts = list.slice(0, state.pageSize);
+        renderGrid();
+      }
 
-  els.modal.classList.remove('hidden');
-  els.modal.focus();
-}
-function closeModal() {
-  els.modal.classList.add('hidden');
-}
-els.modalClose.addEventListener('click', closeModal);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
-els.modal.addEventListener('click', (e) => {
-  if (e.target === els.modal || e.target.classList.contains('modal-backdrop')) closeModal();
-});
+      function renderGrid() {
+        els.grid.innerHTML = "";
+        state.visiblePosts.forEach((p) => {
+          const imgUrl =
+            (p.assets && p.assets[0] && p.assets[0].url) ? p.assets[0].url : "";
+          const card = document.createElement("div");
+          card.className = "card";
+          card.innerHTML = `
+            <div class="card-img">
+              ${imgUrl ? `<img src="${imgUrl}" alt="${p.title || ""}" />` : `<div class="noimg">No image</div>`}
+            </div>
+            <div class="card-meta">
+              <div class="card-title">${p.title || "Untitled"}</div>
+              ${p.date ? `<div class="card-date">${p.date}</div>` : ""}
+            </div>
+          `;
+          els.grid.appendChild(card);
+        });
 
-// Render y fetch
-async function fetchPage(reset = false) {
-  if (reset) {
-    state.offset = 0;
-    els.grid.innerHTML = '';
-  }
-  const url = `/api/grid?${qs({
-    status: state.status,
-    client: state.client,
-    project: state.project,
-    brand: state.brand,
-    platform: state.platform,
-    owner: state.owner,
-    q: state.q,
-    limit: state.limit,
-    offset: state.offset
-  })}`;
+        els.postCount.textContent = `(${state.visiblePosts.length})`;
+      }
 
-  const r = await fetch(url);
-  const data = await r.json();
-  if (!data.ok) {
-    els.count.textContent = '';
-    els.grid.innerHTML = `<div class="error">Error cargando posts</div>`;
-    els.loadMore.style.display = 'none';
-    return;
-  }
+      // eventos
+      els.fClients.addEventListener("change", (e) => {
+        state.filters.client = e.target.value;
+        // si elige client, podemos habilitar brands/proyectos específicos más adelante
+        applyFilters();
+      });
 
-  // Título contador
-  state.total = data.total || 0;
-  els.count.textContent = `(${state.total})`;
+      els.fProjects.addEventListener("change", (e) => {
+        state.filters.project = e.target.value;
+        applyFilters();
+      });
 
-  // Dropdowns con contadores (orden DESC)
-  if (state.offset === 0) {
-    optionize(els.fClient, data.filters?.clients || []);
-    optionize(els.fProject, data.filters?.projects || []);
-    optionize(els.fBrand, data.filters?.brands || []);
-    optionize(els.fPlatform, data.filters?.platforms || []);
-  }
+      els.fBrands.addEventListener("change", (e) => {
+        state.filters.brand = e.target.value;
+        applyFilters();
+      });
 
-  // Cards
-  (data.posts || []).forEach(p => els.grid.appendChild(card(p)));
+      els.fPlatforms.addEventListener("change", (e) => {
+        state.filters.platform = e.target.value;
+        applyFilters();
+      });
 
-  // Load more
-  if (data.has_more) {
-    state.offset = data.next_offset;
-    els.loadMore.style.display = 'inline-flex';
-  } else {
-    els.loadMore.style.display = 'none';
-  }
-}
+      els.fOwners.addEventListener("change", (e) => {
+        state.filters.owner = e.target.value;
+        applyFilters();
+      });
 
-// Listeners
-els.refresh.addEventListener('click', () => fetchPage(true));
-els.search.addEventListener('input', (e) => { state.q = e.target.value || ''; fetchPage(true); });
-els.fStatus.addEventListener('change', (e) => { state.status = e.target.value; fetchPage(true); });
-els.fClient.addEventListener('change', (e) => { state.client = e.target.value; fetchPage(true); });
-els.fProject.addEventListener('change', (e) => { state.project = e.target.value; fetchPage(true); });
-els.fBrand.addEventListener('change', (e) => { state.brand = e.target.value; fetchPage(true); });
-els.fPlatform.addEventListener('change', (e) => { state.platform = e.target.value; fetchPage(true); });
-els.loadMore.addEventListener('click', () => fetchPage(false));
+      els.fStatus.addEventListener("change", async (e) => {
+        state.filters.status = e.target.value;
+        await fetchData();
+      });
 
-// Primer render
-fetchPage(true);
-</script>
-</body>
+      els.refreshBtn.addEventListener("click", fetchData);
+
+      els.searchInput.addEventListener("input", (e) => {
+        state.filters.search = e.target.value;
+        applyFilters();
+      });
+
+      els.loadMore.addEventListener("click", () => {
+        state.pageSize += 24;
+        applyFilters();
+      });
+
+      // inicial
+      fetchData();
+    </script>
+  </body>
 </html>
