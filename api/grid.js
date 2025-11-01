@@ -2,11 +2,11 @@
 import { Client } from "@notionhq/client";
 
 export default async function handler(req, res) {
-  // 1. leer envs EXACTOS que tienes en Vercel
+  // 1. leer las env que YA tienes en Vercel
   const NOTION_TOKEN = process.env.NOTION_TOKEN;
   const NOTION_DB_ID =
     process.env.NOTION_DB_ID ||
-    process.env.NOTION_DATABASE_ID || // así lo tienes en el screenshot
+    process.env.NOTION_DATABASE_ID || // así la tienes en Vercel
     null;
 
   if (!NOTION_TOKEN || !NOTION_DB_ID) {
@@ -16,9 +16,10 @@ export default async function handler(req, res) {
     });
   }
 
+  // 2. client de Notion
   const notion = new Client({ auth: NOTION_TOKEN });
 
-  // 2. leer body (tus filtros)
+  // 3. leer filtros que manda el front
   let body = {};
   if (req.method === "POST") {
     try {
@@ -36,24 +37,28 @@ export default async function handler(req, res) {
     status = "all",
   } = body || {};
 
-  // 3. Filtros base (estos rompían antes)
+  // 4. filtros base — AQUÍ era donde se rompía
   const filters = [
+    // no mostrar archivados
     {
-      property: "Archivado", // checkbox
+      property: "Archivado",
       checkbox: {
+        // si la casilla es distinta de true => lo mostramos
         does_not_equal: true,
       },
     },
+    // no mostrar los que tienen Hide
     {
-      property: "Hide", // checkbox
+      property: "Hide",
       checkbox: {
         does_not_equal: true,
       },
     },
   ];
 
-  // 4. Filtros dinámicos según tus columnas reales
-  // Client → Relation con DB Clients
+  // 5. filtros dinámicos según TU DB de Content
+
+  // Client → relation con DB Clients
   if (client !== "all") {
     filters.push({
       property: "Client",
@@ -63,7 +68,7 @@ export default async function handler(req, res) {
     });
   }
 
-  // Project → Relation con DB Projects
+  // Project → relation con DB Projects
   if (project !== "all") {
     filters.push({
       property: "Project",
@@ -103,21 +108,24 @@ export default async function handler(req, res) {
     });
   }
 
-  // 5. armar query
+  // 6. armar query final
   const query = {
     database_id: NOTION_DB_ID,
     filter: {
       and: filters,
     },
     sorts: [
+      // primero pineados
       {
         property: "Pinned",
         direction: "descending",
       },
+      // luego por fecha de publicación
       {
         property: "Publish Date",
         direction: "descending",
       },
+      // por si acaso, por fecha de creación
       {
         timestamp: "created_time",
         direction: "descending",
@@ -129,6 +137,7 @@ export default async function handler(req, res) {
   try {
     const resp = await notion.databases.query(query);
 
+    // 7. normalizar los items para el front
     const items = (resp.results || []).map((page) => {
       const props = page.properties || {};
 
