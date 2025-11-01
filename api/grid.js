@@ -39,90 +39,72 @@ export default async function handler(req, res) {
         .json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
     }
 
-    const { client, project, platform, owner, status } = req.query || {};
+    const { client, project, platform, owner, status, pageSize } = req.query || {};
 
-    // 🔐 FILTROS BASE (versión válida para Notion)
+    // 🔐 FILTROS BASE
     const filters = [
-      // Hide = false
       {
         property: "Hide",
-        checkbox: {
-          equals: false,
-        },
+        checkbox: { equals: false },
       },
-      // Archivado = false
       {
         property: "Archivado",
-        checkbox: {
-          equals: false,
-        },
+        checkbox: { equals: false },
       },
     ];
 
-    // filtros dinámicos
     if (client && client !== "all") {
       filters.push({
         property: "Client",
-        relation: {
-          contains: client,
-        },
+        relation: { contains: client },
       });
     }
 
     if (project && project !== "all") {
       filters.push({
         property: "Project",
-        relation: {
-          contains: project,
-        },
+        relation: { contains: project },
       });
     }
 
     if (platform && platform !== "all") {
       filters.push({
         property: "Platform",
-        multi_select: {
-          contains: platform,
-        },
+        multi_select: { contains: platform },
       });
     }
 
     if (owner && owner !== "all") {
       filters.push({
         property: "Owner",
-        people: {
-          contains: owner,
-        },
+        people: { contains: owner },
       });
     }
 
     if (status && status !== "all") {
       filters.push({
         property: "Status",
-        status: {
-          equals: status,
-        },
+        status: { equals: status },
       });
     }
 
-    const queryPayload = {
+    const limit = Number(pageSize) || 15;
+
+    const { results } = await notion.databases.query({
       database_id: CONTENT_DB,
+      filter: { and: filters },
       sorts: [
         { property: "Pinned", direction: "descending" },
         { property: "Publish Date", direction: "descending" },
         { timestamp: "created_time", direction: "descending" },
       ],
-      filter: {
-        and: filters,
-      },
-    };
-
-    const { results } = await notion.databases.query(queryPayload);
+      page_size: limit,
+    });
 
     const posts = results.map((page) => {
       const props = page.properties || {};
 
-      // PRIORIDAD: Attachment → Link → Canva
+      // PRIORIDAD DE MEDIA
       const attachmentFiles = getFilesArray(props["Attachment"]);
       const linkFiles = getFilesArray(props["Link"]);
       const canvaFiles = getFilesArray(props["Canva"]);
@@ -153,14 +135,9 @@ export default async function handler(req, res) {
       };
     });
 
-    return res.status(200).json({
-      ok: true,
-      posts,
-    });
+    return res.status(200).json({ ok: true, posts });
   } catch (err) {
     console.error("GRID ERROR:", err);
-    return res
-      .status(500)
-      .json({ ok: false, error: err.message || "Unknown error" });
+    return res.status(500).json({ ok: false, error: err.message });
   }
 }
