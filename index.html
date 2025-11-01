@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="es">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
@@ -8,58 +8,73 @@
 </head>
 <body>
   <div id="app" class="wrap">
+
     <div class="toolbar">
-      <button id="btnRefresh" class="btn btn--refresh" type="button">Refresh</button>
-      <button id="btnClear" class="btn btn--ghost" type="button">Clear filters</button>
+      <div class="toolbar__left">
+        <button id="btnRefresh" class="btn btn--refresh">Refresh</button>
+      </div>
 
       <div class="filters" id="filters">
         <div class="select">
-          <button class="select__btn" id="fClient" type="button">All Clients</button>
+          <button class="select__btn" id="fClient" aria-expanded="false">All Clients</button>
           <div class="select__menu" id="mClient"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fProject" type="button">All Projects</button>
+          <button class="select__btn" id="fProject" aria-expanded="false">All Projects</button>
           <div class="select__menu" id="mProject"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fPlatform" type="button">All Platforms</button>
+          <button class="select__btn" id="fPlatform" aria-expanded="false">All Platforms</button>
           <div class="select__menu" id="mPlatform"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fOwner" type="button">All Owners</button>
+          <button class="select__btn" id="fOwner" aria-expanded="false">All Owners</button>
           <div class="select__menu" id="mOwner"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fStatus" type="button">All Status</button>
+          <button class="select__btn" id="fStatus" aria-expanded="false">All Status</button>
           <div class="select__menu" id="mStatus"></div>
         </div>
       </div>
+
+      <div class="toolbar__right">
+        <button id="btnClear" class="btn btn--ghost">
+          Clear filters <span id="badgeCount" class="badge" hidden>0</span>
+        </button>
+      </div>
     </div>
 
+    <!-- GRID -->
     <div id="grid" class="grid"></div>
 
+    <!-- MORE -->
     <div class="more">
-      <button id="btnMore" class="btn btn--more" type="button">Load more</button>
+      <button id="btnMore" class="btn btn--more">Load more</button>
     </div>
+
   </div>
+
+  <!-- Overlay de carga y toasts (evita que el JS se rompa si faltan) -->
+  <div id="overlay" class="overlay" hidden></div>
+  <div id="toasts" class="toasts"></div>
 
   <!-- Modal -->
   <div id="modal" class="modal" aria-hidden="true">
     <div class="modal__backdrop" id="modalBackdrop"></div>
     <div class="modal__panel" role="dialog" aria-modal="true">
-      <button class="modal__close" id="modalClose" aria-label="Close" type="button">✕</button>
+      <button class="modal__close" id="modalClose" aria-label="Close">✕</button>
       <div class="viewer">
-        <div class="viewer__stage" id="vStage"></div>
+        <div class="viewer__stage" id="vStage" tabindex="0"></div>
         <div class="viewer__nav">
-          <button class="nav prev" id="vPrev" aria-label="Prev" type="button">‹</button>
+          <button class="nav prev" id="vPrev" aria-label="Prev">‹</button>
           <div class="viewer__dots" id="vDots"></div>
-          <button class="nav next" id="vNext" aria-label="Next" type="button">›</button>
+          <button class="nav next" id="vNext" aria-label="Next">›</button>
         </div>
         <div class="viewer__copy" id="vCopy"></div>
       </div>
     </div>
   </div>
 
-  <script type="module" src="./index.js"></script>
+  <script type="module" src="/index.js"></script>
 </body>
 </html>
