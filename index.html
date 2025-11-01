@@ -1,430 +1,753 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Flujo Creativo Grid</title>
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Instagram Grid</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
-        --bg: #f7f6f4;
-        --card: #ffffff;
-        --radius: 26px;
+        --bg: #f5f5f5;
+        --card-bg: #d9dfe5;
+        --radius: 0; /* cards cuadradas */
+        --gap: 1px;
+        --text: #111;
+        --white: #fff;
       }
+
       * {
         box-sizing: border-box;
       }
+
       body {
         margin: 0;
         background: var(--bg);
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: var(--text);
       }
-      .toolbar {
-        display: flex;
-        gap: 14px;
-        padding: 14px 16px 4px;
-        background: var(--bg);
+
+      .wrap {
+        max-width: 1050px;
+        margin: 0 auto;
+        padding: 1.5rem 1rem 3.5rem;
       }
-      .btn-pill {
-        width: 54px;
-        height: 54px;
-        border-radius: 20px;
-        border: none;
-        background: #fff;
+
+      .topbar {
         display: flex;
+        gap: 0.75rem;
         align-items: center;
-        justify-content: center;
-        font-size: 14px;
-        cursor: pointer;
-        box-shadow: 0 5px 20px rgba(0,0,0,0.03);
+        justify-content: flex-start;
+        margin-bottom: 1rem;
       }
-      .btn-primary {
-        background: #151515;
+
+      .btn-refresh {
+        background: #0f172a;
         color: #fff;
-        width: auto;
-        padding: 0 18px;
-        gap: 6px;
+        border: none;
+        outline: none;
+        padding: 0.5rem 1.5rem;
+        border-radius: 999px;
+        display: flex;
+        gap: 0.5rem;
+        align-items: center;
+        font-weight: 500;
+        cursor: pointer;
       }
+
       .filters-row {
         display: flex;
-        gap: 10px;
-        padding: 0 16px 10px;
+        gap: 0.75rem;
+        flex-wrap: wrap;
       }
-      .filters-row select {
-        border: none;
+
+      .filter {
         background: #fff;
-        border-radius: 16px;
-        padding: 6px 12px;
-        font-size: 13px;
-        outline: none;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
-        gap: 6px;
-        padding: 0 16px 30px;
-      }
-      .cell {
-        background: #d7d7d7;
-        aspect-ratio: 1 / 1;
-        border-radius: 18px;
-        overflow: hidden;
-        position: relative;
+        border-radius: 999px;
+        border: 1px solid rgba(15, 23, 42, 0.06);
+        padding: 0.25rem 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
         cursor: pointer;
       }
-      .cell img {
+
+      .filter select {
+        border: none;
+        outline: none;
+        background: transparent;
+        font-size: 0.78rem;
+      }
+
+      .grid {
+        margin-top: 1.5rem;
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: var(--gap);
+      }
+
+      .card {
+        background: var(--card-bg);
+        position: relative;
+        aspect-ratio: 4 / 3;
+        overflow: hidden;
+        border-radius: var(--radius);
+        cursor: pointer;
+      }
+
+      .card img,
+      .card video {
         width: 100%;
         height: 100%;
         object-fit: cover;
         display: block;
       }
-      .cell-empty {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: #858585;
-        font-size: 11px;
-      }
-      .pin {
+
+      .card-overlay {
         position: absolute;
-        top: 6px;
-        right: 6px;
+        inset: 0;
+        background: linear-gradient(
+          180deg,
+          rgba(0, 0, 0, 0.5) 0%,
+          rgba(0, 0, 0, 0) 38%,
+          rgba(0, 0, 0, 0.55) 100%
+        );
+        opacity: 0;
+        transition: opacity 0.2s;
+        color: #fff;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        padding: 0.5rem 0.6rem 0.5rem;
+      }
+
+      .card:hover .card-overlay {
+        opacity: 1;
+      }
+
+      .badge-row {
+        display: flex;
+        gap: 0.35rem;
+      }
+
+      .badge-icon {
         width: 24px;
         height: 24px;
+        background: rgba(0, 0, 0, 0.35);
         border-radius: 999px;
-        background: rgba(0,0,0,0.35);
         display: flex;
         align-items: center;
         justify-content: center;
+      }
+
+      .card-title {
+        font-size: 0.8rem;
+        font-weight: 600;
+        line-height: 1.2;
+      }
+
+      .card-date {
+        font-size: 0.68rem;
+        opacity: 0.8;
+      }
+
+      .empty {
+        text-align: center;
+        padding: 4rem 1rem 2rem;
+        color: rgba(15, 23, 42, 0.4);
+        font-weight: 500;
+      }
+
+      .load-more {
+        display: block;
+        margin: 1.5rem auto 0;
+        background: #0f172a;
         color: #fff;
-        font-size: 14px;
+        border: none;
+        border-radius: 999px;
+        padding: 0.5rem 1.5rem;
+        cursor: pointer;
       }
-      .error-box {
-        margin: 0 16px 10px;
-        background: rgba(192,57,43,0.08);
-        border: 1px solid rgba(192,57,43,0.2);
-        border-radius: 14px;
-        padding: 8px 12px;
-        font-size: 12px;
-        color: #a93226;
-      }
-      /* modal */
-      .modal-backdrop {
+
+      /* MODAL */
+      .modal {
         position: fixed;
         inset: 0;
-        background: rgba(0,0,0,0.35);
+        background: rgba(15, 23, 42, 0.55);
         display: none;
         align-items: center;
         justify-content: center;
         z-index: 100;
       }
-      .modal {
+
+      .modal-content {
         background: #fff;
-        border-radius: 24px;
-        max-width: 420px;
-        width: calc(100% - 36px);
-        max-height: calc(100% - 36px);
-        display: flex;
-        flex-direction: column;
+        width: min(900px, 92%);
+        max-height: 92vh;
+        border-radius: 18px;
         overflow: hidden;
+        display: grid;
+        grid-template-columns: 3fr 2fr;
       }
-      .modal-img {
-        width: 100%;
-        aspect-ratio: 1 / 1;
-        background: #ccc;
+
+      .modal-media {
+        background: #000;
+        position: relative;
       }
-      .modal-img img {
+
+      .modal-media img,
+      .modal-media video {
         width: 100%;
         height: 100%;
         object-fit: cover;
       }
-      .modal-body {
-        padding: 14px 16px 16px;
+
+      .modal-info {
+        padding: 1rem 1.2rem 1.5rem;
+        overflow-y: auto;
       }
-      .modal-title {
-        font-weight: 600;
-        font-size: 14px;
-      }
-      .modal-meta {
-        font-size: 12px;
-        color: #777;
-        margin-top: 4px;
-      }
+
       .modal-close {
         position: absolute;
-        top: 10px;
-        right: 10px;
-        background: rgba(255,255,255,0.8);
+        top: 12px;
+        right: 12px;
+        background: rgba(0, 0, 0, 0.4);
         border: none;
         border-radius: 999px;
-        width: 28px;
-        height: 28px;
+        width: 30px;
+        height: 30px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         cursor: pointer;
       }
-      @media (min-width: 900px) {
+
+      .carousel-dots {
+        position: absolute;
+        bottom: 10px;
+        left: 50%;
+        transform: translateX(-50%);
+        display: flex;
+        gap: 6px;
+      }
+
+      .dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.45);
+      }
+
+      .dot.active {
+        background: #fff;
+      }
+
+      .modal-controls {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        pointer-events: none;
+      }
+
+      .carousel-btn {
+        width: 35px;
+        height: 35px;
+        background: rgba(0, 0, 0, 0.35);
+        border-radius: 999px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        pointer-events: auto;
+        cursor: pointer;
+        margin: 0 8px;
+      }
+
+      /* mobile */
+      @media (max-width: 850px) {
+        .modal-content {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 700px) {
         .grid {
-          grid-template-columns: repeat(3, minmax(200px, 1fr));
+          grid-template-columns: repeat(2, minmax(0, 1fr));
         }
       }
     </style>
   </head>
   <body>
-    <div class="toolbar">
-      <button class="btn-pill btn-primary" id="refreshBtn">Refresh</button>
-      <button class="btn-pill" id="filtersBtn">⚙️</button>
-      <button class="btn-pill">⋯</button>
-    </div>
-
-    <!-- filtros visibles (desktop) -->
-    <div class="filters-row" id="filtersRow">
-      <select id="clientsSelect">
-        <option value="all">All Clients</option>
-      </select>
-      <select id="projectsSelect">
-        <option value="all">All Projects</option>
-      </select>
-      <select id="platformsSelect">
-        <option value="all">All Platforms</option>
-      </select>
-      <select id="ownersSelect">
-        <option value="all">All Owners</option>
-      </select>
-      <select id="statusesSelect">
-        <option value="all">All Status</option>
-      </select>
-    </div>
-
-    <div id="errorBox" class="error-box" style="display:none;"></div>
-
-    <div class="grid" id="grid"></div>
-
-    <!-- modal -->
-    <div class="modal-backdrop" id="modalBackdrop">
-      <div class="modal">
-        <button class="modal-close" id="modalClose">✕</button>
-        <div class="modal-img" id="modalImgBox"></div>
-        <div class="modal-body">
-          <div class="modal-title" id="modalTitle"></div>
-          <div class="modal-meta" id="modalMeta"></div>
+    <div class="wrap">
+      <div class="topbar">
+        <button class="btn-refresh" id="btnRefresh">
+          <span>
+            <!-- refresh icon -->
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M3 4v6h6"
+                stroke="white"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M21 20v-6h-6"
+                stroke="white"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M20.49 9A9 9 0 0 0 5.64 5.64L3 10"
+                stroke="white"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+              <path
+                d="M3.51 15A9 9 0 0 0 18.36 18.36L21 14"
+                stroke="white"
+                stroke-width="1.6"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              />
+            </svg>
+          </span>
+          Refresh
+        </button>
+        <div class="filters-row">
+          <div class="filter">
+            <select id="filterClients">
+              <option value="all">All Clients</option>
+            </select>
+          </div>
+          <div class="filter">
+            <select id="filterProjects">
+              <option value="all">All Projects</option>
+            </select>
+          </div>
+          <div class="filter">
+            <select id="filterPlatforms">
+              <option value="all">All Platforms</option>
+            </select>
+          </div>
+          <div class="filter">
+            <select id="filterOwners">
+              <option value="all">All Owners</option>
+            </select>
+          </div>
+          <div class="filter">
+            <select id="filterStatus">
+              <option value="all">All Status</option>
+            </select>
+          </div>
         </div>
+      </div>
+
+      <div id="error" class="empty" style="display: none"></div>
+
+      <div id="grid" class="grid"></div>
+      <button id="btnLoadMore" class="load-more" style="display: none">
+        Load more
+      </button>
+    </div>
+
+    <!-- MODAL -->
+    <div id="modal" class="modal">
+      <div class="modal-content">
+        <div class="modal-media" id="modalMedia">
+          <button class="modal-close" id="modalClose">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M6 6l12 12M18 6L6 18"
+                stroke="white"
+                stroke-width="1.7"
+                stroke-linecap="round"
+              />
+            </svg>
+          </button>
+          <div class="modal-controls" id="modalControls">
+            <div class="carousel-btn" id="btnPrev">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M15 18l-6-6 6-6"
+                  stroke="white"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+            <div class="carousel-btn" id="btnNext">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path
+                  d="M9 6l6 6-6 6"
+                  stroke="white"
+                  stroke-width="1.7"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </div>
+          </div>
+          <div class="carousel-dots" id="carouselDots"></div>
+        </div>
+        <div class="modal-info" id="modalInfo"></div>
       </div>
     </div>
 
     <script>
-      const clientsSelect = document.getElementById("clientsSelect");
-      const projectsSelect = document.getElementById("projectsSelect");
-      const platformsSelect = document.getElementById("platformsSelect");
-      const ownersSelect = document.getElementById("ownersSelect");
-      const statusesSelect = document.getElementById("statusesSelect");
-      const grid = document.getElementById("grid");
-      const errorBox = document.getElementById("errorBox");
-      const refreshBtn = document.getElementById("refreshBtn");
-      const filtersBtn = document.getElementById("filtersBtn");
+      const gridEl = document.getElementById("grid");
+      const errorEl = document.getElementById("error");
+      const btnLoadMore = document.getElementById("btnLoadMore");
 
-      const modalBackdrop = document.getElementById("modalBackdrop");
-      const modalImgBox = document.getElementById("modalImgBox");
-      const modalTitle = document.getElementById("modalTitle");
-      const modalMeta = document.getElementById("modalMeta");
+      const filterClients = document.getElementById("filterClients");
+      const filterProjects = document.getElementById("filterProjects");
+      const filterPlatforms = document.getElementById("filterPlatforms");
+      const filterOwners = document.getElementById("filterOwners");
+      const filterStatus = document.getElementById("filterStatus");
+
+      const modal = document.getElementById("modal");
+      const modalMedia = document.getElementById("modalMedia");
+      const modalInfo = document.getElementById("modalInfo");
       const modalClose = document.getElementById("modalClose");
+      const carouselDots = document.getElementById("carouselDots");
+      const btnPrev = document.getElementById("btnPrev");
+      const btnNext = document.getElementById("btnNext");
 
-      let ALL_FILTERS = {
-        clients: [],
-        projects: [],
-        platforms: [],
-        owners: [],
-        statuses: [],
-      };
-
-      let CURRENT_FILTERS = {
-        clientId: "all",
-        projectId: "all",
-        platformId: "all",
-        ownerId: "all",
-        statusId: "all",
-      };
-
-      let LAST_POSTS = [];
-
-      async function init() {
-        await loadFilters();
-        await loadPosts();
-      }
+      let allPosts = [];
+      let visibleCount = 15;
+      let currentMediaIndex = 0;
+      let currentModalPost = null;
 
       async function loadFilters() {
+        // ya los tienes en tu /api/filters.js
+        // aquí solo ejemplo:
         try {
-          const r = await fetch("/api/filters");
-          const data = await r.json();
-          if (!data.ok) {
-            showError(data.error || "Error al cargar filtros");
-            return;
-          }
-          hideError();
-          ALL_FILTERS = data.filters;
+          const res = await fetch("/api/filters");
+          const data = await res.json();
+          if (!data.ok) return;
 
-          fillSelect(clientsSelect, ALL_FILTERS.clients, "All Clients");
-          fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", { skipEmptyName: true });
-          fillSelect(platformsSelect, ALL_FILTERS.platforms, "All Platforms");
-          fillSelect(ownersSelect, ALL_FILTERS.owners, "All Owners");
-          fillSelect(statusesSelect, ALL_FILTERS.statuses, "All Status");
+          // clients
+          filterClients.innerHTML = '<option value="all">All Clients</option>';
+          data.clients.forEach((c) => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = c.name;
+            filterClients.appendChild(opt);
+          });
+
+          // projects
+          filterProjects.innerHTML = '<option value="all">All Projects</option>';
+          data.projects.forEach((p) => {
+            const opt = document.createElement("option");
+            opt.value = p.id;
+            opt.textContent = p.name;
+            filterProjects.appendChild(opt);
+          });
+
+          // platforms
+          filterPlatforms.innerHTML =
+            '<option value="all">All Platforms</option>';
+          data.platforms.forEach((p) => {
+            const opt = document.createElement("option");
+            opt.value = p;
+            opt.textContent = p;
+            filterPlatforms.appendChild(opt);
+          });
+
+          // owners
+          filterOwners.innerHTML = '<option value="all">All Owners</option>';
+          data.owners.forEach((o) => {
+            const opt = document.createElement("option");
+            opt.value = o.id;
+            opt.textContent = o.name;
+            filterOwners.appendChild(opt);
+          });
+
+          // status
+          filterStatus.innerHTML = '<option value="all">All Status</option>';
+          data.statuses.forEach((s) => {
+            const opt = document.createElement("option");
+            opt.value = s;
+            opt.textContent = s;
+            filterStatus.appendChild(opt);
+          });
         } catch (err) {
-          showError("Error al cargar filtros: " + err.message);
+          console.warn("filters err", err);
         }
       }
 
       async function loadPosts() {
-        try {
-          grid.innerHTML = "";
-          const qs = new URLSearchParams(CURRENT_FILTERS).toString();
-          const r = await fetch("/api/grid?" + qs);
-          const data = await r.json();
-          if (!data.ok) {
-            showError(data.error || "Error al cargar los posts");
-            return;
-          }
-          hideError();
-          LAST_POSTS = data.posts || [];
-          renderGrid(LAST_POSTS);
-        } catch (err) {
-          showError("Error al cargar posts: " + err.message);
-        }
-      }
+        errorEl.style.display = "none";
+        gridEl.innerHTML = "Cargando...";
 
-      function renderGrid(posts) {
-        if (!posts.length) {
-          grid.innerHTML = "<p style='font-size:12px;color:#777;'>No content</p>";
+        const q = new URLSearchParams({
+          client: filterClients.value,
+          project: filterProjects.value,
+          platform: filterPlatforms.value,
+          owner: filterOwners.value,
+          status: filterStatus.value,
+        }).toString();
+
+        const res = await fetch("/api/grid?" + q);
+        const text = await res.text();
+
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          console.log("server sent non json:", text);
+          errorEl.style.display = "block";
+          errorEl.textContent = "Error inicial: " + text.slice(0, 90) + "...";
+          gridEl.innerHTML = "";
           return;
         }
-        grid.innerHTML = "";
-        posts.forEach((post) => {
-          const cell = document.createElement("div");
-          cell.className = "cell";
 
-          if (post.mediaUrl) {
-            const img = document.createElement("img");
-            img.src = post.mediaUrl;
-            img.alt = post.title;
-            cell.appendChild(img);
-          } else {
-            const empty = document.createElement("div");
-            empty.className = "cell-empty";
-            empty.textContent = "No image";
-            cell.appendChild(empty);
+        if (!data.ok) {
+          errorEl.style.display = "block";
+          errorEl.textContent = data.error;
+          gridEl.innerHTML = "";
+          return;
+        }
+
+        allPosts = data.posts || [];
+        visibleCount = 15;
+        renderPosts();
+      }
+
+      function renderPosts() {
+        gridEl.innerHTML = "";
+        if (!allPosts.length) {
+          gridEl.innerHTML = "";
+          errorEl.style.display = "block";
+          errorEl.textContent = "No content";
+          btnLoadMore.style.display = "none";
+          return;
+        }
+        errorEl.style.display = "none";
+
+        const toShow = allPosts.slice(0, visibleCount);
+
+        toShow.forEach((post) => {
+          const card = document.createElement("div");
+          card.className = "card";
+
+          const main = post.media && post.media.length ? post.media[0] : null;
+
+          if (main) {
+            if (main.kind === "video") {
+              const v = document.createElement("video");
+              v.src = main.url;
+              v.muted = true;
+              v.playsInline = true;
+              v.autoplay = true;
+              v.loop = true;
+              card.appendChild(v);
+            } else {
+              const img = document.createElement("img");
+              img.src = main.url;
+              card.appendChild(img);
+            }
           }
 
+          const overlay = document.createElement("div");
+          overlay.className = "card-overlay";
+
+          // badges
+          const badgeRow = document.createElement("div");
+          badgeRow.className = "badge-row";
+
+          // pin
           if (post.pinned) {
-            const pin = document.createElement("div");
-            pin.className = "pin";
-            pin.textContent = "📌";
-            cell.appendChild(pin);
+            const b = document.createElement("div");
+            b.className = "badge-icon";
+            b.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M9 3l6 6-2 2-6-6 2-2zm-4 8l3 3-3 3 3 3-1 1-4-4 1-1 1 1 2-2-1-1 1-1z" stroke="white" stroke-width="1.3" />
+              </svg>
+            `;
+            badgeRow.appendChild(b);
           }
 
-          cell.addEventListener("click", () => openModal(post));
-          grid.appendChild(cell);
+          // video
+          const hasVideo =
+            post.media && post.media.some((m) => m.kind === "video");
+          if (hasVideo) {
+            const b = document.createElement("div");
+            b.className = "badge-icon";
+            b.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <path d="M9 8l6 4-6 4V8z" fill="white"/>
+              </svg>
+            `;
+            badgeRow.appendChild(b);
+          }
+
+          // multiple
+          if (post.media && post.media.length > 1) {
+            const b = document.createElement("div");
+            b.className = "badge-icon";
+            // icono tipo IG de carrusel (2 layers)
+            b.innerHTML = `
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                <rect x="6" y="7" width="9" height="9" rx="2" stroke="white" stroke-width="1.35"/>
+                <rect x="9" y="10" width="9" height="9" rx="2" stroke="white" stroke-width="1.35" opacity="0.6"/>
+              </svg>
+            `;
+            badgeRow.appendChild(b);
+          }
+
+          overlay.appendChild(badgeRow);
+
+          // title/date
+          const t = document.createElement("div");
+          const date = post.date ? new Date(post.date) : null;
+          const short =
+            date &&
+            date.toLocaleDateString("en-US", {
+              month: "short",
+              day: "2-digit",
+            });
+
+          t.innerHTML = `
+            <div class="card-title">${post.title || "Sin nombre"}</div>
+            <div class="card-date">${short || ""}</div>
+          `;
+          overlay.appendChild(t);
+
+          card.appendChild(overlay);
+
+          card.addEventListener("click", () => openModal(post));
+          gridEl.appendChild(card);
         });
-      }
 
-      function fillSelect(selectEl, items, firstLabel, { skipEmptyName = false } = {}) {
-        selectEl.innerHTML = "";
-        const o = document.createElement("option");
-        o.value = "all";
-        o.textContent = firstLabel;
-        selectEl.appendChild(o);
-
-        (items || []).forEach((item) => {
-          if (skipEmptyName && (!item.name || item.name === "Sin nombre")) return;
-          const opt = document.createElement("option");
-          opt.value = item.id;
-          opt.textContent = item.name;
-          selectEl.appendChild(opt);
-        });
-      }
-
-      // cascada
-      clientsSelect.addEventListener("change", () => {
-        const clientId = clientsSelect.value;
-        CURRENT_FILTERS.clientId = clientId;
-
-        if (clientId === "all") {
-          fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", { skipEmptyName: true });
-          CURRENT_FILTERS.projectId = "all";
+        // show / hide load more
+        if (allPosts.length > visibleCount) {
+          btnLoadMore.style.display = "block";
         } else {
-          const filtered = (ALL_FILTERS.projects || []).filter(
-            (p) => p.client_id === clientId && p.name && p.name !== "Sin nombre"
-          );
-          fillSelect(projectsSelect, filtered, "All Projects", { skipEmptyName: true });
-          CURRENT_FILTERS.projectId = "all";
+          btnLoadMore.style.display = "none";
         }
+      }
 
-        loadPosts();
+      btnLoadMore.addEventListener("click", () => {
+        visibleCount += 15;
+        renderPosts();
       });
 
-      projectsSelect.addEventListener("change", () => {
-        CURRENT_FILTERS.projectId = projectsSelect.value;
-        loadPosts();
-      });
-
-      platformsSelect.addEventListener("change", () => {
-        CURRENT_FILTERS.platformId = platformsSelect.value;
-        loadPosts();
-      });
-
-      ownersSelect.addEventListener("change", () => {
-        CURRENT_FILTERS.ownerId = ownersSelect.value;
-        loadPosts();
-      });
-
-      statusesSelect.addEventListener("change", () => {
-        CURRENT_FILTERS.statusId = statusesSelect.value;
-        loadPosts();
-      });
-
-      refreshBtn.addEventListener("click", async () => {
-        await loadFilters();
-        await loadPosts();
-      });
-
-      // modal
       function openModal(post) {
-        modalBackdrop.style.display = "flex";
-        modalImgBox.innerHTML = "";
-        if (post.mediaUrl) {
-          const img = document.createElement("img");
-          img.src = post.mediaUrl;
-          modalImgBox.appendChild(img);
-        } else {
-          modalImgBox.textContent = "No image";
+        currentModalPost = post;
+        currentMediaIndex = 0;
+        modal.style.display = "flex";
+        renderModalMedia();
+        renderModalInfo();
+      }
+
+      function renderModalMedia() {
+        const post = currentModalPost;
+        const media = post.media || [];
+        const current = media[currentMediaIndex];
+
+        modalMedia.style.background = "#000";
+        // limpiar img/video previos excepto controls/dots/close
+        Array.from(modalMedia.children).forEach((ch) => {
+          if (
+            ch !== modalClose &&
+            ch !== carouselDots &&
+            ch !== document.getElementById("modalControls")
+          ) {
+            modalMedia.removeChild(ch);
+          }
+        });
+
+        if (current) {
+          if (current.kind === "video") {
+            const v = document.createElement("video");
+            v.src = current.url;
+            v.controls = true;
+            v.style.width = "100%";
+            v.style.height = "100%";
+            v.style.objectFit = "cover";
+            modalMedia.insertBefore(v, carouselDots);
+          } else {
+            const img = document.createElement("img");
+            img.src = current.url;
+            img.style.width = "100%";
+            img.style.height = "100%";
+            img.style.objectFit = "cover";
+            modalMedia.insertBefore(img, carouselDots);
+          }
         }
-        modalTitle.textContent = post.title || "Untitled";
-        const meta = [];
-        if (post.date) meta.push(post.date);
-        if (post.platforms && post.platforms.length) meta.push(post.platforms.join(", "));
-        if (post.status) meta.push(post.status);
-        if (post.owners && post.owners.length) meta.push("By " + post.owners.join(", "));
-        modalMeta.textContent = meta.join(" • ");
+
+        // dots
+        carouselDots.innerHTML = "";
+        media.forEach((m, idx) => {
+          const d = document.createElement("div");
+          d.className = "dot" + (idx === currentMediaIndex ? " active" : "");
+          d.addEventListener("click", () => {
+            currentMediaIndex = idx;
+            renderModalMedia();
+          });
+          carouselDots.appendChild(d);
+        });
+
+        // mostrar/ocultar controls
+        if (media.length > 1) {
+          document.getElementById("modalControls").style.display = "flex";
+        } else {
+          document.getElementById("modalControls").style.display = "none";
+        }
       }
-      function closeModal() {
-        modalBackdrop.style.display = "none";
+
+      function renderModalInfo() {
+        const p = currentModalPost;
+        modalInfo.innerHTML = `
+          <h3 style="margin-top:0">${p.title || "Sin nombre"}</h3>
+          <p style="font-size:.8rem; opacity:.6; margin-top:-.3rem">${p.date || ""}</p>
+          <div style="white-space:pre-wrap; font-size:.85rem; margin-top:1rem">${p.copy || ""}</div>
+        `;
       }
-      modalClose.addEventListener("click", closeModal);
-      modalBackdrop.addEventListener("click", (e) => {
-        if (e.target === modalBackdrop) closeModal();
+
+      modalClose.addEventListener("click", () => {
+        modal.style.display = "none";
+      });
+      modal.addEventListener("click", (e) => {
+        if (e.target === modal) modal.style.display = "none";
       });
 
-      // mostrar/ocultar filtros si lo quieres tipo modal en mobile
-      filtersBtn.addEventListener("click", () => {
-        const row = document.getElementById("filtersRow");
-        row.style.display = row.style.display === "none" ? "flex" : "none";
+      btnPrev.addEventListener("click", () => {
+        if (!currentModalPost) return;
+        const media = currentModalPost.media || [];
+        if (!media.length) return;
+        currentMediaIndex =
+          (currentMediaIndex - 1 + media.length) % media.length;
+        renderModalMedia();
+      });
+      btnNext.addEventListener("click", () => {
+        if (!currentModalPost) return;
+        const media = currentModalPost.media || [];
+        if (!media.length) return;
+        currentMediaIndex = (currentMediaIndex + 1) % media.length;
+        renderModalMedia();
       });
 
-      function showError(msg) {
-        errorBox.style.display = "block";
-        errorBox.textContent = msg;
-      }
-      function hideError() {
-        errorBox.style.display = "none";
-        errorBox.textContent = "";
-      }
+      document.getElementById("btnRefresh").addEventListener("click", () => {
+        loadPosts();
+      });
 
-      init();
+      // filters change
+      [
+        filterClients,
+        filterProjects,
+        filterPlatforms,
+        filterOwners,
+        filterStatus,
+      ].forEach((sel) => {
+        sel.addEventListener("change", () => loadPosts());
+      });
+
+      // init
+      loadFilters().then(loadPosts);
     </script>
   </body>
 </html>
