@@ -2,7 +2,7 @@
 import { Client } from "@notionhq/client";
 
 export default async function handler(req, res) {
-  // 1. leer las env que YA tienes en Vercel
+  // 1. ENV
   const NOTION_TOKEN = process.env.NOTION_TOKEN;
   const NOTION_DB_ID =
     process.env.NOTION_DB_ID ||
@@ -16,10 +16,9 @@ export default async function handler(req, res) {
     });
   }
 
-  // 2. client de Notion
   const notion = new Client({ auth: NOTION_TOKEN });
 
-  // 3. leer filtros que manda el front
+  // 2. leer body
   let body = {};
   if (req.method === "POST") {
     try {
@@ -37,17 +36,14 @@ export default async function handler(req, res) {
     status = "all",
   } = body || {};
 
-  // 4. filtros base — AQUÍ era donde se rompía
+  // 3. filtros base (ESTE era el que antes te daba el error del checkbox)
   const filters = [
-    // no mostrar archivados
     {
       property: "Archivado",
       checkbox: {
-        // si la casilla es distinta de true => lo mostramos
         does_not_equal: true,
       },
     },
-    // no mostrar los que tienen Hide
     {
       property: "Hide",
       checkbox: {
@@ -56,9 +52,7 @@ export default async function handler(req, res) {
     },
   ];
 
-  // 5. filtros dinámicos según TU DB de Content
-
-  // Client → relation con DB Clients
+  // 4. filtros dinámicos
   if (client !== "all") {
     filters.push({
       property: "Client",
@@ -68,7 +62,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Project → relation con DB Projects
   if (project !== "all") {
     filters.push({
       property: "Project",
@@ -78,7 +71,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Platform → multi-select
   if (platform !== "all") {
     filters.push({
       property: "Platform",
@@ -88,7 +80,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Owner → people
   if (owner !== "all") {
     filters.push({
       property: "Owner",
@@ -98,7 +89,6 @@ export default async function handler(req, res) {
     });
   }
 
-  // Status → status
   if (status !== "all") {
     filters.push({
       property: "Status",
@@ -108,28 +98,13 @@ export default async function handler(req, res) {
     });
   }
 
-  // 6. armar query final
   const query = {
     database_id: NOTION_DB_ID,
-    filter: {
-      and: filters,
-    },
+    filter: { and: filters },
     sorts: [
-      // primero pineados
-      {
-        property: "Pinned",
-        direction: "descending",
-      },
-      // luego por fecha de publicación
-      {
-        property: "Publish Date",
-        direction: "descending",
-      },
-      // por si acaso, por fecha de creación
-      {
-        timestamp: "created_time",
-        direction: "descending",
-      },
+      { property: "Pinned", direction: "descending" },
+      { property: "Publish Date", direction: "descending" },
+      { timestamp: "created_time", direction: "descending" },
     ],
     page_size: 100,
   };
@@ -137,10 +112,10 @@ export default async function handler(req, res) {
   try {
     const resp = await notion.databases.query(query);
 
-    // 7. normalizar los items para el front
     const items = (resp.results || []).map((page) => {
       const props = page.properties || {};
 
+      // título
       const titleProp = props["Post"] || props["Name"] || {};
       const title =
         (titleProp.title &&
@@ -148,20 +123,27 @@ export default async function handler(req, res) {
           titleProp.title[0].plain_text) ||
         "Untitled";
 
+      // media
       const files = props["Attachment"]?.files || [];
       const firstFile = files.length ? files[0] : null;
+      const image =
+        firstFile?.file?.url || firstFile?.external?.url || null;
 
+      // relations
       const clientRel = props["Client"]?.relation || [];
       const projectRel = props["Project"]?.relation || [];
+
+      // multi
       const platforms = props["Platform"]?.multi_select || [];
       const owners = props["Owner"]?.people || [];
       const statusProp = props["Status"]?.status || null;
+
       const publishDate = props["Publish Date"]?.date?.start || null;
 
       return {
         id: page.id,
         title,
-        image: firstFile?.file?.url || firstFile?.external?.url || null,
+        image,
         clientIds: clientRel.map((r) => r.id),
         projectIds: projectRel.map((r) => r.id),
         platforms: platforms.map((p) => p.name),
@@ -171,9 +153,33 @@ export default async function handler(req, res) {
       };
     });
 
+    // 5. construir filtros para la UI (lo que te está pidiendo index.js)
+    const clientSet = new Set();
+    const projectSet = new Set();
+    const platformSet = new Set();
+    const ownerSet = new Set();
+    const statusSet = new Set();
+
+    items.forEach((item) => {
+      (item.clientIds || []).forEach((c) => clientSet.add(c));
+      (item.projectIds || []).forEach((p) => projectSet.add(p));
+      (item.platforms || []).forEach((pl) => platformSet.add(pl));
+      (item.owners || []).forEach((o) => ownerSet.add(o));
+      if (item.status) statusSet.add(item.status);
+    });
+
+    const filtersForUI = {
+      clients: Array.from(clientSet),
+      projects: Array.from(projectSet),
+      platforms: Array.from(platformSet),
+      owners: Array.from(ownerSet),
+      statuses: Array.from(statusSet),
+    };
+
     return res.status(200).json({
       ok: true,
       items,
+      filters: filtersForUI,
     });
   } catch (err) {
     console.error("Notion error:", err.body || err);
