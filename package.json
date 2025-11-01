@@ -1,6 +1,9 @@
 {
+  "name": "notion-grid-irregular",
+  "version": "1.0.0",
   "private": true,
+  "type": "module",
   "dependencies": {
-    "@notionhq/client": "^2.2.14"
+    "@notionhq/client": "^2.2.15"
   }
 }
