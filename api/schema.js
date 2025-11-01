@@ -1,27 +1,22 @@
 // /api/schema.js
 export const SCHEMA = {
-  POSTS_DB_ID: process.env.NOTION_DATABASE_ID,     // Posts
-  CLIENTS_DB_ID: process.env.NOTION_DB_CLIENTS,    // Clients
-  PROJECTS_DB_ID: process.env.NOTION_DB_PROJECTS,  // Projects
+  POSTS_DB_ID: process.env.NOTION_DATABASE_ID,
+  CLIENTS_DB_ID: process.env.NOTION_DB_CLIENTS || null,   // opcional
+  PROJECTS_DB_ID: process.env.NOTION_DB_PROJECTS || null, // opcional
+};
 
-  // Nombres de propiedades en tu DB de Posts (ajusta si difieren)
-  PROPS: {
-    title: 'Name',                 // Título
-    date: 'Publish Date',          // Fecha (date)
-    clients: 'PostClient',         // Relation → Clients
-    projects: 'PostProject',       // Relation → Projects
-    platform: 'Platform',          // Select
-    owners: 'Owner',               // People
-    status: 'Status',              // Status
-    pinned: 'Pinned',              // Checkbox
-    hide: 'Hide',                  // Checkbox (si no existe, se ignora)
-    archived: 'Archivado',         // Checkbox (si no existe, se ignora)
-    // Archivos (files & media):
-    fileA: 'Attachment',
-    fileB: 'Link',
-    fileC: 'Canva Design',
-  },
+// Lista de candidatos por tipo para autodetección
+export const CANDIDATES = {
+  title:        ['Name','Title','Post Title'],
+  date:         ['Publish Date','Date','Fecha'],
+  clients:      ['Client','PostClient'],                 // <— preferimos Client
+  projects:     ['Project name','Project','PostProject'],
+  platform:     ['Platform','Platforms','Channel'],
+  owners:       ['Owner','Owners'],
+  status:       ['Status'],
+  pinned:       ['Pinned'],
+  hide:         ['Hide','Ocultar'],
+  archived:     ['Archivado','Archived'],
 
-  // En Projects, relación hacia Client
-  PROJECTS_CLIENT_PROP: 'Client',  // Relation (Projects → Clients)
+  files:        ['Attachment','Link','Canva Design']     // files & media
 };
