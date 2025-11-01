@@ -2,99 +2,180 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <title>Posts</title>
+    <title>Flujo Creativo Grid</title>
     <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <link rel="stylesheet" href="/styles.css" />
     <style>
+      :root {
+        --bg: #f7f6f4;
+        --card: #ffffff;
+        --radius: 26px;
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
-        background: #f4f4f4;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
-        padding: 0;
+        background: var(--bg);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
-      .topbar {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 28px 28px 0;
-      }
-      .filters-row {
+      .toolbar {
         display: flex;
         gap: 14px;
-        padding: 12px 28px 24px;
+        padding: 14px 16px 4px;
+        background: var(--bg);
       }
-      select {
-        border: none;
-        background: #fff;
-        border-radius: 999px;
-        padding: 10px 16px;
-        font-size: 14px;
-        outline: none;
-        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
-      }
-      .refresh-btn {
-        background: #111;
-        color: #fff;
-        border: none;
-        border-radius: 999px;
-        padding: 10px 20px;
-        font-size: 14px;
-        cursor: pointer;
-      }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-        gap: 16px;
-        padding: 0 28px 40px;
-      }
-      .card {
-        background: #fff;
+      .btn-pill {
+        width: 54px;
+        height: 54px;
         border-radius: 20px;
-        min-height: 180px;
-        display: flex;
-        flex-direction: column;
-        justify-content: flex-end;
-        overflow: hidden;
-      }
-      .card-thumb {
-        flex: 1;
-        background: #dfe4ea;
+        border: none;
+        background: #fff;
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #aaa;
+        font-size: 14px;
+        cursor: pointer;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.03);
+      }
+      .btn-primary {
+        background: #151515;
+        color: #fff;
+        width: auto;
+        padding: 0 18px;
+        gap: 6px;
+      }
+      .filters-row {
+        display: flex;
+        gap: 10px;
+        padding: 0 16px 10px;
+      }
+      .filters-row select {
+        border: none;
+        background: #fff;
+        border-radius: 16px;
+        padding: 6px 12px;
+        font-size: 13px;
+        outline: none;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+        gap: 6px;
+        padding: 0 16px 30px;
+      }
+      .cell {
+        background: #d7d7d7;
+        aspect-ratio: 1 / 1;
+        border-radius: 18px;
+        overflow: hidden;
+        position: relative;
+        cursor: pointer;
+      }
+      .cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .cell-empty {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #858585;
+        font-size: 11px;
+      }
+      .pin {
+        position: absolute;
+        top: 6px;
+        right: 6px;
+        width: 24px;
+        height: 24px;
+        border-radius: 999px;
+        background: rgba(0,0,0,0.35);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #fff;
+        font-size: 14px;
+      }
+      .error-box {
+        margin: 0 16px 10px;
+        background: rgba(192,57,43,0.08);
+        border: 1px solid rgba(192,57,43,0.2);
+        border-radius: 14px;
+        padding: 8px 12px;
         font-size: 12px;
+        color: #a93226;
       }
-      .card-footer {
-        padding: 10px 14px 14px;
+      /* modal */
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.35);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 100;
       }
-      .card-title {
+      .modal {
+        background: #fff;
+        border-radius: 24px;
+        max-width: 420px;
+        width: calc(100% - 36px);
+        max-height: calc(100% - 36px);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .modal-img {
+        width: 100%;
+        aspect-ratio: 1 / 1;
+        background: #ccc;
+      }
+      .modal-img img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .modal-body {
+        padding: 14px 16px 16px;
+      }
+      .modal-title {
         font-weight: 600;
         font-size: 14px;
       }
-      .card-date {
+      .modal-meta {
         font-size: 12px;
         color: #777;
         margin-top: 4px;
       }
-      .error-box {
-        color: #c0392b;
-        background: rgba(192, 57, 43, 0.12);
-        border: 1px solid rgba(192, 57, 43, 0.25);
-        padding: 10px 16px;
-        border-radius: 14px;
-        margin: 0 28px 18px;
-        font-size: 13px;
+      .modal-close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        background: rgba(255,255,255,0.8);
+        border: none;
+        border-radius: 999px;
+        width: 28px;
+        height: 28px;
+        cursor: pointer;
+      }
+      @media (min-width: 900px) {
+        .grid {
+          grid-template-columns: repeat(3, minmax(200px, 1fr));
+        }
       }
     </style>
   </head>
   <body>
-    <div class="topbar">
-      <h1 style="margin:0;font-size:34px;">Posts</h1>
-      <button class="refresh-btn" id="refreshBtn">Refresh</button>
+    <div class="toolbar">
+      <button class="btn-pill btn-primary" id="refreshBtn">Refresh</button>
+      <button class="btn-pill" id="filtersBtn">⚙️</button>
+      <button class="btn-pill">⋯</button>
     </div>
 
-    <div class="filters-row">
+    <!-- filtros visibles (desktop) -->
+    <div class="filters-row" id="filtersRow">
       <select id="clientsSelect">
         <option value="all">All Clients</option>
       </select>
@@ -114,8 +195,18 @@
 
     <div id="errorBox" class="error-box" style="display:none;"></div>
 
-    <div class="grid" id="postsGrid">
-      <!-- cards -->
+    <div class="grid" id="grid"></div>
+
+    <!-- modal -->
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal">
+        <button class="modal-close" id="modalClose">✕</button>
+        <div class="modal-img" id="modalImgBox"></div>
+        <div class="modal-body">
+          <div class="modal-title" id="modalTitle"></div>
+          <div class="modal-meta" id="modalMeta"></div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -124,11 +215,17 @@
       const platformsSelect = document.getElementById("platformsSelect");
       const ownersSelect = document.getElementById("ownersSelect");
       const statusesSelect = document.getElementById("statusesSelect");
-      const postsGrid = document.getElementById("postsGrid");
+      const grid = document.getElementById("grid");
       const errorBox = document.getElementById("errorBox");
       const refreshBtn = document.getElementById("refreshBtn");
+      const filtersBtn = document.getElementById("filtersBtn");
 
-      // estado en memoria
+      const modalBackdrop = document.getElementById("modalBackdrop");
+      const modalImgBox = document.getElementById("modalImgBox");
+      const modalTitle = document.getElementById("modalTitle");
+      const modalMeta = document.getElementById("modalMeta");
+      const modalClose = document.getElementById("modalClose");
+
       let ALL_FILTERS = {
         clients: [],
         projects: [],
@@ -145,6 +242,8 @@
         statusId: "all",
       };
 
+      let LAST_POSTS = [];
+
       async function init() {
         await loadFilters();
         await loadPosts();
@@ -152,117 +251,98 @@
 
       async function loadFilters() {
         try {
-          const resp = await fetch("/api/filters");
-          const data = await resp.json();
+          const r = await fetch("/api/filters");
+          const data = await r.json();
           if (!data.ok) {
-            showError(data.error || "No se pudieron cargar los filtros");
+            showError(data.error || "Error al cargar filtros");
             return;
           }
           hideError();
-          ALL_FILTERS = data.filters || ALL_FILTERS;
+          ALL_FILTERS = data.filters;
 
-          // Clients
           fillSelect(clientsSelect, ALL_FILTERS.clients, "All Clients");
-
-          // Projects (lista completa; luego filtramos si eligen client)
-          fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", {
-            skipEmptyName: true,
-          });
-
-          // Platforms
+          fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", { skipEmptyName: true });
           fillSelect(platformsSelect, ALL_FILTERS.platforms, "All Platforms");
-
-          // Owners
           fillSelect(ownersSelect, ALL_FILTERS.owners, "All Owners");
-
-          // Status
           fillSelect(statusesSelect, ALL_FILTERS.statuses, "All Status");
         } catch (err) {
-          showError("Error inicial: " + err.message);
+          showError("Error al cargar filtros: " + err.message);
         }
-      }
-
-      function fillSelect(selectEl, items, firstLabel, { skipEmptyName = false } = {}) {
-        // limpiar
-        selectEl.innerHTML = "";
-        const opt = document.createElement("option");
-        opt.value = "all";
-        opt.textContent = firstLabel;
-        selectEl.appendChild(opt);
-
-        (items || []).forEach((item) => {
-          if (skipEmptyName && (!item.name || item.name === "Sin nombre")) {
-            return;
-          }
-          const o = document.createElement("option");
-          o.value = item.id;
-          o.textContent = item.name;
-          selectEl.appendChild(o);
-        });
       }
 
       async function loadPosts() {
         try {
-          postsGrid.innerHTML = "Cargando...";
+          grid.innerHTML = "";
           const qs = new URLSearchParams(CURRENT_FILTERS).toString();
-          const resp = await fetch("/api/grid?" + qs);
-          const data = await resp.json();
+          const r = await fetch("/api/grid?" + qs);
+          const data = await r.json();
           if (!data.ok) {
-            showError(data.error || "No se pudieron cargar los posts");
-            postsGrid.innerHTML = "";
+            showError(data.error || "Error al cargar los posts");
             return;
           }
           hideError();
-          renderPosts(data.posts || []);
+          LAST_POSTS = data.posts || [];
+          renderGrid(LAST_POSTS);
         } catch (err) {
           showError("Error al cargar posts: " + err.message);
-          postsGrid.innerHTML = "";
         }
       }
 
-      function renderPosts(posts) {
+      function renderGrid(posts) {
         if (!posts.length) {
-          postsGrid.innerHTML = "<p>No posts</p>";
+          grid.innerHTML = "<p style='font-size:12px;color:#777;'>No content</p>";
           return;
         }
-        postsGrid.innerHTML = "";
+        grid.innerHTML = "";
         posts.forEach((post) => {
-          const card = document.createElement("div");
-          card.className = "card";
+          const cell = document.createElement("div");
+          cell.className = "cell";
 
-          const thumb = document.createElement("div");
-          thumb.className = "card-thumb";
-          if (post.attachments && post.attachments.length > 0) {
-            // mostramos solo "image" texto, no cargamos la imagen real para no pesar
-            thumb.textContent = "image";
+          if (post.mediaUrl) {
+            const img = document.createElement("img");
+            img.src = post.mediaUrl;
+            img.alt = post.title;
+            cell.appendChild(img);
           } else {
-            thumb.textContent = "No image";
+            const empty = document.createElement("div");
+            empty.className = "cell-empty";
+            empty.textContent = "No image";
+            cell.appendChild(empty);
           }
 
-          const footer = document.createElement("div");
-          footer.className = "card-footer";
-          const title = document.createElement("div");
-          title.className = "card-title";
-          title.textContent = post.title;
-          const date = document.createElement("div");
-          date.className = "card-date";
-          date.textContent = post.date ? post.date : "";
+          if (post.pinned) {
+            const pin = document.createElement("div");
+            pin.className = "pin";
+            pin.textContent = "📌";
+            cell.appendChild(pin);
+          }
 
-          footer.appendChild(title);
-          footer.appendChild(date);
-
-          card.appendChild(thumb);
-          card.appendChild(footer);
-
-          postsGrid.appendChild(card);
+          cell.addEventListener("click", () => openModal(post));
+          grid.appendChild(cell);
         });
       }
 
-      // Cascada: cuando cambia CLIENT → proyectos se filtran
+      function fillSelect(selectEl, items, firstLabel, { skipEmptyName = false } = {}) {
+        selectEl.innerHTML = "";
+        const o = document.createElement("option");
+        o.value = "all";
+        o.textContent = firstLabel;
+        selectEl.appendChild(o);
+
+        (items || []).forEach((item) => {
+          if (skipEmptyName && (!item.name || item.name === "Sin nombre")) return;
+          const opt = document.createElement("option");
+          opt.value = item.id;
+          opt.textContent = item.name;
+          selectEl.appendChild(opt);
+        });
+      }
+
+      // cascada
       clientsSelect.addEventListener("change", () => {
         const clientId = clientsSelect.value;
         CURRENT_FILTERS.clientId = clientId;
-        // rearmar projects
+
         if (clientId === "all") {
           fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", { skipEmptyName: true });
           CURRENT_FILTERS.projectId = "all";
@@ -273,6 +353,7 @@
           fillSelect(projectsSelect, filtered, "All Projects", { skipEmptyName: true });
           CURRENT_FILTERS.projectId = "all";
         }
+
         loadPosts();
       });
 
@@ -299,6 +380,39 @@
       refreshBtn.addEventListener("click", async () => {
         await loadFilters();
         await loadPosts();
+      });
+
+      // modal
+      function openModal(post) {
+        modalBackdrop.style.display = "flex";
+        modalImgBox.innerHTML = "";
+        if (post.mediaUrl) {
+          const img = document.createElement("img");
+          img.src = post.mediaUrl;
+          modalImgBox.appendChild(img);
+        } else {
+          modalImgBox.textContent = "No image";
+        }
+        modalTitle.textContent = post.title || "Untitled";
+        const meta = [];
+        if (post.date) meta.push(post.date);
+        if (post.platforms && post.platforms.length) meta.push(post.platforms.join(", "));
+        if (post.status) meta.push(post.status);
+        if (post.owners && post.owners.length) meta.push("By " + post.owners.join(", "));
+        modalMeta.textContent = meta.join(" • ");
+      }
+      function closeModal() {
+        modalBackdrop.style.display = "none";
+      }
+      modalClose.addEventListener("click", closeModal);
+      modalBackdrop.addEventListener("click", (e) => {
+        if (e.target === modalBackdrop) closeModal();
+      });
+
+      // mostrar/ocultar filtros si lo quieres tipo modal en mobile
+      filtersBtn.addEventListener("click", () => {
+        const row = document.getElementById("filtersRow");
+        row.style.display = row.style.display === "none" ? "flex" : "none";
       });
 
       function showError(msg) {
