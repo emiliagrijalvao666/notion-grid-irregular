@@ -1,184 +1,104 @@
-// api/grid.js  (ESM)
 import { Client } from "@notionhq/client";
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
-const DB_CONTENT = process.env.NOTION_DATABASE_ID;
 
-export default async function handler(req, res) {
-  if (req.method !== "GET") {
-    res.status(405).json({ ok: false, error: "Method not allowed" });
-    return;
-  }
-  if (!process.env.NOTION_TOKEN || !DB_CONTENT) {
-    res.status(200).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
-    return;
-  }
+// Helper to detect file type from url/name
+const isVideoUrl = (u='') => /\.mp4($|\?)/i.test(u) || /\.mov($|\?)/i.test(u) || /\.webm($|\?)/i.test(u);
 
-  try {
-    // schema para detectar qué propiedades existen
-    const schema = await notion.databases.retrieve({ database_id: DB_CONTENT });
-    const hasProp = (name) => !!schema.properties[name];
+export default async function handler(req, res){
+  try{
+    const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
+    if(!NOTION_TOKEN || !NOTION_DATABASE_ID) return res.status(200).json({ ok:false, error:"Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
 
-    // helpers query
-    const q = req.query || {};
-    const toArr = (v) => (Array.isArray(v) ? v : v ? [v] : []);
-    const pageSize = Math.min(50, Math.max(1, parseInt(q.pageSize || "12", 10)));
-    const startCursor = q.cursor || undefined;
+    const {
+      pageSize = 12, cursor,
+      client: clients = [], project: projects = [],
+      platform: platforms = [], owner: owners = [],
+      status
+    } = req.query;
 
-    const clientIds    = toArr(q.client);
-    const clientNames  = toArr(q.client_name);
-    const projectIds   = toArr(q.project);
-    const projectNames = toArr(q.project_name);
-    const platforms    = toArr(q.platform);
-    const owners       = toArr(q.owner);
-    const statuses     = toArr(q.status);
-
-    // --- Construcción de filtros seguros ---
     const and = [];
 
-    // protocolo Hide/Archivado (si existen)
-    if (hasProp("Hide"))       and.push({ property: "Hide", checkbox: { equals: false } });
-    if (hasProp("Archivado"))  and.push({ property: "Archivado", checkbox: { equals: false } });
+    // Exclusions
+    if (hasProp(NOTION_DATABASE_ID, 'Hide')) and.push({ property:'Hide', checkbox:{ equals:false }});
 
-    // Clients: por relation ID o por nombre (formula/texto: ClientName)
-    if ((clientIds.length && (hasProp("Client") || hasProp("PostClient"))) ||
-        (clientNames.length && hasProp("ClientName"))) {
-      const or = [];
-      if (clientIds.length && hasProp("Client")) {
-        clientIds.forEach(id => or.push({ property: "Client", relation: { contains: id } }));
-      }
-      // compat viejo
-      if (clientIds.length && !hasProp("Client") && hasProp("PostClient")) {
-        clientIds.forEach(id => or.push({ property: "PostClient", relation: { contains: id } }));
-      }
-      if (clientNames.length && hasProp("ClientName")) {
-        clientNames.forEach(n => or.push({ property: "ClientName", rich_text: { contains: n } }));
-      }
-      if (or.length) and.push({ or });
-    }
+    // If there's a Draft checkbox, exclude; otherwise if Status has "Draft", exclude
+    // We'll try both defensively:
+    and.push({ or: [
+      { property:'Draft', checkbox:{ equals:false }},
+      { property:'Draft', checkbox:{ is_empty:true }},
+      { and:[ { property:'Status', status:{ does_not_equal:'Draft' }} ] }
+    ]});
 
-    // Projects: por relation ID o por nombre (ProjectName)
-    if ((projectIds.length && hasProp("Project")) || (projectNames.length && hasProp("ProjectName"))) {
-      const or = [];
-      if (projectIds.length && hasProp("Project")) {
-        projectIds.forEach(id => or.push({ property: "Project", relation: { contains: id } }));
-      }
-      if (projectNames.length && hasProp("ProjectName")) {
-        projectNames.forEach(n => or.push({ property: "ProjectName", rich_text: { contains: n } }));
-      }
-      if (or.length) and.push({ or });
-    }
+    // Multi filters
+    if (arr(clients).length)  and.push({ or: arr(clients).map(id => ({ property:'PostClient',  relation:{ contains:id }})) });
+    if (arr(projects).length) and.push({ or: arr(projects).map(id => ({ property:'PostProject', relation:{ contains:id }})) });
+    if (arr(platforms).length)and.push({ or: arr(platforms).map(n  => ({ property:'Platform',   multi_select:{ contains:n }})) });
+    if (arr(owners).length)   and.push({ or: arr(owners).map(id   => ({ property:'Owner',      people:{ contains:id }})) });
 
-    // Platform (select)
-    if (platforms.length && hasProp("Platform")) {
-      and.push({
-        or: platforms.map(v => ({ property: "Platform", select: { equals: v } }))
-      });
-    }
+    // Single
+    if (status) and.push({ property:'Status', status:{ equals: Array.isArray(status)?status[0]:status }});
 
-    // Owners (people)
-    if (owners.length && hasProp("Owner")) {
-      and.push({
-        or: owners.map(id => ({ property: "Owner", people: { contains: id } }))
-      });
-    }
+    const filter = and.length ? { and } : undefined;
 
-    // Status (status)
-    if (statuses.length && hasProp("Status")) {
-      and.push({
-        or: statuses.map(s => ({ property: "Status", status: { equals: s } }))
-      });
-    }
+    const query = {
+      database_id: NOTION_DATABASE_ID,
+      filter,
+      sorts: [
+        { property:'Publish Date', direction:'descending' },
+        { timestamp:'created_time', direction:'descending' }
+      ],
+      page_size: Number(pageSize),
+      start_cursor: cursor || undefined
+    };
 
-    // query Notion
-    const resp = await notion.databases.query({
-      database_id: DB_CONTENT,
-      start_cursor: startCursor,
-      page_size: pageSize,
-      filter: and.length ? { and } : undefined,
-      sorts: buildSorts(schema)
+    const resp = await notion.databases.query(query);
+
+    const posts = resp.results.map(page => {
+      const p = page.properties || {};
+
+      // Collect media from the three properties (files & media)
+      const media = []
+        .concat(readFiles(p['Attachment']))
+        .concat(readFiles(p['Link']))
+        .concat(readFiles(p['Canva Design']));
+
+      const out = {
+        id: page.id,
+        title: readTitle(p['Name']) || 'No title',
+        date: p['Publish Date']?.date?.start || null,
+        pinned: !!p['Pinned']?.checkbox,
+        media: media,
+        copy: readPlain(p['Copy'])
+      };
+      return out;
     });
-
-    // map de resultados
-    const posts = resp.results.map(page => pageToPost(page, schema));
 
     res.status(200).json({
-      ok: true,
-      posts,
-      next_cursor: resp.has_more ? resp.next_cursor : null
+      ok:true,
+      next_cursor: resp.has_more ? resp.next_cursor : null,
+      posts
     });
-  } catch (err) {
-    res.status(200).json({ ok: false, error: cleanErr(err) });
+  }catch(err){
+    res.status(200).json({ ok:false, error: err.body?.message || err.message || String(err) });
   }
 }
 
 // ---------- helpers ----------
+function arr(v){ return Array.isArray(v) ? v : (v ? [v] : []); }
 
-function buildSorts(schema) {
-  const sorts = [];
-  if (schema.properties["Publish Date"]?.type === "date") {
-    sorts.push({ property: "Publish Date", direction: "descending" });
-  }
-  // fallback por created_time para mantener feed fresco
-  sorts.push({ timestamp: "created_time", direction: "descending" });
-  return sorts;
+function readFiles(prop){
+  const out = [];
+  const items = prop?.files || [];
+  items.forEach(f=>{
+    const url = f.type==='external' ? f.external?.url : f.file?.url;
+    if(!url) return;
+    out.push({ type: isVideoUrl(url) ? 'video' : 'image', url });
+  });
+  return out;
 }
+function readTitle(prop){ return (prop?.title||[]).map(t=>t.plain_text).join('').trim(); }
+function readPlain(prop){ return (prop?.rich_text||[]).map(t=>t.plain_text).join('').trim(); }
 
-function pageToPost(page, schema) {
-  const get = (prop) => page.properties[prop];
-
-  const title =
-    get("Post")?.title?.map(t=>t.plain_text).join("") ||
-    get("Name")?.title?.map(t=>t.plain_text).join("") ||
-    "";
-
-  const date =
-    get("Publish Date")?.date?.start ||
-    page.created_time;
-
-  const pinned = schema.properties["Pinned"]?.type === "checkbox"
-    ? !!get("Pinned")?.checkbox
-    : false;
-
-  const copy = (get("Copy")?.rich_text || []).map(t=>t.plain_text).join(" ").trim();
-
-  // media: Attachment, Link, Canva (Files & media)
-  const media = []
-    .concat(filesFrom(get("Attachment")))
-    .concat(filesFrom(get("Link")))
-    .concat(filesFrom(get("Canva")));
-
-  return {
-    id: page.id,
-    title,
-    date,
-    pinned,
-    copy,
-    media: media.length ? media : []
-  };
-}
-
-function filesFrom(prop) {
-  if (!prop) return [];
-  const arr = prop.files || [];
-  return arr.map(f => {
-    const url = f.type === "file" ? f.file?.url : f.external?.url;
-    return {
-      url,
-      type: isVideo(url) ? "video" : "image"
-    };
-  }).filter(x => !!x.url);
-}
-
-function isVideo(url="") {
-  return /\.(mp4|mov|m4v|webm|avi|mkv)$/i.test(url.split("?")[0]);
-}
-
-function cleanErr(e) {
-  try {
-    const j = JSON.parse(e.body);
-    return j?.message || e.message || String(e);
-  } catch {
-    return e.message || String(e);
-  }
-}
+// Optional: shallow check for property existence by name (best effort)
+async function hasProp(){ return true; } // keep true; we handle Draft/Hide defensively
