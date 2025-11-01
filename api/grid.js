@@ -3,7 +3,6 @@ import { notion } from './_notion.js';
 
 const CONTENT_DB_ID   = process.env.NOTION_DB_ID || process.env.CONTENT_DB_ID || process.env.NOTION_DATABASE_ID;
 const PAGE_SIZE_MAX   = 50;
-const HORIZON_DAYS    = parseInt(process.env.HORIZON_DAYS || '0', 10); // 0 = desactivado
 
 // candidatos de propiedades en el Content DB
 const TITLE_CANDS     = ['Name','Título','Title','Post','Post title'];
@@ -20,9 +19,6 @@ const REL_PROJECTS_CANDS = ['Project','Projects','PostProject'];
 
 export default async function handler(req, res){
   try{
-    // Cache CDN (Vercel) para acelerar lecturas; revalida en background
-    res.setHeader('Cache-Control', 'public, s-maxage=30, stale-while-revalidate=300');
-
     if (!CONTENT_DB_ID) return res.json({ ok:false, error:'Missing NOTION_DB_ID / CONTENT_DB_ID' });
 
     const qs = req.query;
@@ -33,7 +29,7 @@ export default async function handler(req, res){
       clients:   asArray(qs.client),
       projects:  asArray(qs.project),
       platforms: asArray(qs.platform),
-      owners:    asArray(qs.owner),   // IDs de people
+      owners:    asArray(qs.owner),   // IDs
       statuses:  asArray(qs.status),  // single
     };
 
@@ -42,7 +38,12 @@ export default async function handler(req, res){
     const titleKey    = firstExisting(meta, TITLE_CANDS, 'title');
     const dateKey     = firstExisting(meta, DATE_CANDS, 'date');
     const ownerKey    = firstExisting(meta, OWNER_CANDS, 'people');
-    const statusKey   = firstExisting(meta, STATUS_CANDS, 'select');
+
+    // detectar status como 'status' o 'select'
+    const statusInfo  = firstExistingWithType(meta, STATUS_CANDS, ['status','select']);
+    const statusKey   = statusInfo?.key;
+    const statusType  = statusInfo?.type;
+
     const platformKey = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
     const pinnedKey   = firstExisting(meta, PINNED_CANDS, 'checkbox');
     const hideKey     = firstExisting(meta, HIDE_CANDS, 'checkbox');
@@ -51,14 +52,18 @@ export default async function handler(req, res){
     const relClientKey  = firstExisting(meta, REL_CLIENTS_CANDS, 'relation');
     const relProjectKey = firstExisting(meta, REL_PROJECTS_CANDS, 'relation');
 
-    // ---- Notion filter (solo lo que Notion soporta bien) ----
+    // ---- Notion filter ----
     const and = [];
 
     if (hideKey){
       and.push({ property: hideKey, checkbox: { equals: false }});
     }
     if (statusKey && sel.statuses.length===1){
-      and.push({ property: statusKey, select: { equals: sel.statuses[0] }});
+      if (statusType === 'status'){
+        and.push({ property: statusKey, status: { equals: sel.statuses[0] }});
+      } else {
+        and.push({ property: statusKey, select: { equals: sel.statuses[0] }});
+      }
     }
     if (platformKey && sel.platforms.length>0){
       and.push({
@@ -79,12 +84,6 @@ export default async function handler(req, res){
       and.push({
         or: sel.owners.map(id => ({ property: ownerKey, people: { contains: id }}))
       });
-    }
-
-    // Horizonte opcional por fecha (reduce escaneo en Notion)
-    if (HORIZON_DAYS > 0 && dateKey){
-      const d = new Date(Date.now() - HORIZON_DAYS*864e5).toISOString();
-      and.push({ property: dateKey, date: { on_or_after: d } });
     }
 
     const filter = and.length ? { and } : undefined;
@@ -126,6 +125,15 @@ function firstExisting(meta, candidates, type){
     if (prop.type === type) return key;
   }
   return undefined;
+}
+
+function firstExistingWithType(meta, candidates, typesArr){
+  for(const key of candidates){
+    const prop = meta.properties[key];
+    if(!prop) continue;
+    if(typesArr.includes(prop.type)) return { key, type: prop.type };
+  }
+  return null;
 }
 
 function buildSorts(meta, dateKey){
