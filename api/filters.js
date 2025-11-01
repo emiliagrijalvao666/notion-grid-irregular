@@ -1,66 +1,80 @@
 // api/filters.js
 import { Client as NotionClient } from "@notionhq/client";
 
-const notion = new NotionClient({
-  auth: process.env.NOTION_TOKEN,
-});
-
-const DB_ID = process.env.NOTION_DB_ID;
-
-// helpers
-function getPlainTextFromFormula(prop) {
-  if (!prop) return "";
-  if (prop.type === "formula") {
-    if (prop.formula.type === "string") return prop.formula.string || "";
-  }
-  return "";
-}
-
-function getPlainTextFromRelation(prop) {
-  // por si algún día quieres leer directo de la relation
-  if (!prop) return "";
-  if (prop.type === "relation" && Array.isArray(prop.relation) && prop.relation.length > 0) {
-    // Notion no da el nombre aquí, solo el id
-    return prop.relation[0].id;
-  }
-  return "";
-}
-
-function getPlainTextFromPeople(prop) {
-  if (!prop) return "";
-  if (prop.type === "people" && Array.isArray(prop.people) && prop.people.length > 0) {
-    const p = prop.people[0];
-    return p.name || p.id || "";
-  }
-  return "";
-}
-
-function getMultiSelectNames(prop) {
-  if (!prop) return [];
-  if (prop.type === "multi_select") {
-    return prop.multi_select.map((o) => o.name).filter(Boolean);
-  }
-  return [];
-}
-
-function getStatusName(prop) {
-  if (!prop) return "";
-  if (prop.type === "status") {
-    return prop.status?.name || "";
-  }
-  return "";
-}
+const NOTION_TOKEN =
+  process.env.NOTION_TOKEN ||
+  process.env.NOTION_SECRET || // por si lo nombraste así
+  "";
+const DB_ID =
+  process.env.NOTION_DB_ID ||
+  process.env.NOTION_DATABASE_ID || // por si lo nombraste así
+  "";
 
 export default async function handler(req, res) {
-  if (!DB_ID || !process.env.NOTION_TOKEN) {
-    return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DB_ID" });
+  // si NO hay credenciales: devolvemos filtros vacíos pero NO rompemos la UI
+  if (!NOTION_TOKEN || !DB_ID) {
+    return res.status(200).json({
+      ok: true,
+      warning: "NOTION_TOKEN or NOTION_DB_ID not found in env. Returning empty filters.",
+      filters: {
+        clients: [],
+        projects: [],
+        platforms: [],
+        owners: [],
+        statuses: [],
+      },
+    });
+  }
+
+  const notion = new NotionClient({ auth: NOTION_TOKEN });
+
+  // helpers
+  function getPlainTextFromFormula(prop) {
+    if (!prop) return "";
+    if (prop.type === "formula" && prop.formula.type === "string") {
+      return prop.formula.string || "";
+    }
+    return "";
+  }
+
+  function getPlainTextFromRelation(prop) {
+    if (!prop) return "";
+    if (prop.type === "relation" && Array.isArray(prop.relation) && prop.relation.length > 0) {
+      // Notion no da el nombre en la relation, solo el id
+      return prop.relation[0].id;
+    }
+    return "";
+  }
+
+  function getPlainTextFromPeople(prop) {
+    if (!prop) return "";
+    if (prop.type === "people" && Array.isArray(prop.people) && prop.people.length > 0) {
+      const p = prop.people[0];
+      return p.name || p.id || "";
+    }
+    return "";
+  }
+
+  function getMultiSelectNames(prop) {
+    if (!prop) return [];
+    if (prop.type === "multi_select") {
+      return prop.multi_select.map((o) => o.name).filter(Boolean);
+    }
+    return [];
+  }
+
+  function getStatusName(prop) {
+    if (!prop) return "";
+    if (prop.type === "status") {
+      return prop.status?.name || "";
+    }
+    return "";
   }
 
   try {
     const pages = [];
     let cursor = undefined;
 
-    // traemos TODO lo visible (sin Hide y sin Archivado)
     do {
       const response = await notion.databases.query({
         database_id: DB_ID,
@@ -88,7 +102,6 @@ export default async function handler(req, res) {
       cursor = response.has_more ? response.next_cursor : undefined;
     } while (cursor);
 
-    // sets
     const clientsSet = new Set();
     const projectsSet = new Set();
     const platformsSet = new Set();
@@ -99,12 +112,10 @@ export default async function handler(req, res) {
       const props = page.properties || {};
 
       // CLIENTS
-      // 1) fórmula ClientName (la que acabas de corregir)
       const clientNameFromFormula = getPlainTextFromFormula(props["ClientName"]);
       if (clientNameFromFormula) {
         clientsSet.add(clientNameFromFormula);
       } else {
-        // 2) por si tienes algo directo en Client
         const clientFromRelation = getPlainTextFromRelation(props["Client"]);
         if (clientFromRelation) clientsSet.add(clientFromRelation);
       }
@@ -118,11 +129,11 @@ export default async function handler(req, res) {
         if (projectFromRelation) projectsSet.add(projectFromRelation);
       }
 
-      // PLATFORMS (multi-select)
+      // PLATFORMS
       const platforms = getMultiSelectNames(props["Platform"]);
       platforms.forEach((p) => platformsSet.add(p));
 
-      // OWNERS (people)
+      // OWNERS
       const owner = getPlainTextFromPeople(props["Owner"]);
       if (owner) ownersSet.add(owner);
 
@@ -131,12 +142,11 @@ export default async function handler(req, res) {
       if (st) statusesSet.add(st);
     }
 
-    // ordenar un poco
-    const clients = Array.from(clientsSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    const projects = Array.from(projectsSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    const platforms = Array.from(platformsSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    const owners = Array.from(ownersSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
-    const statuses = Array.from(statusesSet).filter(Boolean).sort((a, b) => a.localeCompare(b));
+    const clients = Array.from(clientsSet).filter(Boolean).sort();
+    const projects = Array.from(projectsSet).filter(Boolean).sort();
+    const platforms = Array.from(platformsSet).filter(Boolean).sort();
+    const owners = Array.from(ownersSet).filter(Boolean).sort();
+    const statuses = Array.from(statusesSet).filter(Boolean).sort();
 
     return res.status(200).json({
       ok: true,
