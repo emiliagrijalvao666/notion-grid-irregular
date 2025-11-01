@@ -1,26 +1,39 @@
-import { getDbMeta, prop } from "./_notion.js";
+// /api/schema.js
+import { notion, CONTENT_DB_ID } from './_notion.js';
 
-// Detecta nombres reales de propiedades (tolerante a variantes)
-export async function detectContentSchema(contentDbId){
-  const meta = await getDbMeta(contentDbId);
-  if(!meta) return null;
+export async function getContentMeta() {
+  const meta = await notion.databases.retrieve({ database_id: CONTENT_DB_ID });
+  const props = meta.properties;
 
-  const p = (names)=> prop(meta, names);
+  const firstOf = (type) =>
+    Object.entries(props).find(([, p]) => p.type === type)?.[0];
 
-  return {
-    titleKey: p(['name','título','title']),
-    dateKey:  p(['publish date','fecha','date','published']),
-    ownerKey: p(['owner','owners']),
-    statusKey:p(['status','estado']),
-    platformKey: p(['platform','platforms','plataforma','plataformas']),
-    clientKey:  p(['client','postclient','cliente']),
-    projectKey: p(['project','postproject','proyecto']),
-    copyKey:    p(['copy','caption','contenido','content']),
-    pinnedKey:  p(['pinned','pin']),
-    hideKey:    p(['hide','hidden']),
-    // Cualquier "files & media" se tratará como asset
-    fileKeys: Object.entries(meta.properties)
-              .filter(([,v])=>v.type==='files')
-              .map(([k])=>k)
-  };
+  const findBy = (type, re) =>
+    Object.entries(props).find(([k, p]) => p.type === type && re.test(k))?.[0];
+
+  const title     = firstOf('title');
+  const date      = findBy('date', /publish|date|fecha/i) || firstOf('date');
+  const owners    = findBy('people', /owner|owners|dueñ/i) || firstOf('people');
+  const status    = findBy('status', /status/i) || findBy('select', /status/i);
+  const platforms = findBy('multi_select', /platform/i) || findBy('select', /platform/i);
+  const pinned    = findBy('checkbox', /pin|pinned/i);
+  const copy      = findBy('rich_text', /copy|descrip|texto/i);
+
+  const files = Object.entries(props)
+    .filter(([, p]) => p.type === 'files')
+    .map(([k]) => k); // e.g., ["Attachment","Image Source","Canva Design"]
+
+  const clientRel  = findBy('relation', /client|postclient/i);
+  const projectRel = findBy('relation', /project|postproject/i);
+
+  return { title, date, owners, status, platforms, pinned, copy, files, clientRel, projectRel, raw: meta };
+}
+
+export function readOptions(meta, propName) {
+  if (!propName) return [];
+  const p = meta.properties[propName];
+  if (!p) return [];
+  const t = p.type;
+  const path = t === 'status' ? 'status' : (t === 'select' ? 'select' : 'multi_select');
+  return p[path]?.options?.map(o => o.name) || [];
 }
