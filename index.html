@@ -1,101 +1,165 @@
-<script>
-  const state = {
-    client: "All Clients",
-    project: "All Projects",
-    platform: "All Platforms",
-    owner: "All Owners",
-    status: "All Status",
-  };
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Posts</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#fff;color:#111;margin:0}
+    header{display:flex;justify-content:space-between;align-items:center;padding:24px 24px 8px}
+    h1{margin:0;font-size:36px}
+    .toolbar{display:flex;gap:8px;align-items:center;padding:0 24px 12px;flex-wrap:wrap}
+    select,button,input{border:0;border-radius:999px;background:#eee;padding:10px 14px;font-size:14px}
+    button{cursor:pointer}
+    #posts-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px;padding:0 24px 32px}
+    .card{background:#f6f6f6;border-radius:16px;overflow:hidden;position:relative;min-height:180px}
+    .ph{width:100%;height:130px;background:#e9e9e9;color:#999;display:flex;align-items:center;justify-content:center}
+    .thumb{width:100%;height:130px;object-fit:cover;display:block}
+    .card .meta{padding:10px 12px}
+    .pin{position:absolute;top:6px;right:6px;background:#111;color:#fff;font-size:11px;border-radius:999px;padding:2px 6px}
+    .alert{margin:12px 24px;padding:12px 14px;background:#fee;border:1px solid #f88;border-radius:12px;color:#900}
+    .muted{opacity:.6}
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Posts</h1>
+    <div>
+      <button id="refresh-btn">Refresh</button>
+    </div>
+  </header>
 
-  const $clients   = document.querySelector('#filter-clients');
-  const $projects  = document.querySelector('#filter-projects');
-  const $platforms = document.querySelector('#filter-platforms');
-  const $owners    = document.querySelector('#filter-owners');
-  const $status    = document.querySelector('#filter-status');
-  const $refresh   = document.querySelector('#refresh-btn');
-  const $grid      = document.querySelector('#posts-grid');
+  <div class="toolbar" id="filters-bar">
+    <select id="filter-clients"></select>
+    <select id="filter-projects"></select>
+    <select id="filter-platforms"></select>
+    <select id="filter-owners"></select>
+    <select id="filter-status"></select>
+  </div>
 
-  async function loadData() {
-    const qs = new URLSearchParams(state).toString();
-    const res = await fetch(`/api/grid?${qs}`);
-    const data = await res.json();
-    if (!data.ok) {
-      console.error(data);
-      return;
+  <div id="alerts"></div>
+  <div id="posts-grid"></div>
+
+  <script>
+  (function(){
+    const state = {
+      client: "All Clients",
+      project: "All Projects",
+      platform: "All Platforms",
+      owner: "All Owners",
+      status: "All Status",
+    };
+
+    let $clients,$projects,$platforms,$owners,$status,$grid,$alerts,$refresh;
+
+    window.addEventListener('DOMContentLoaded', init);
+
+    function qs(id){ return document.querySelector(id); }
+    function esc(s){ return (s||"").replace(/[&<>"']/g,m=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;' }[m])); }
+
+    function ensureDOM(){
+      // Si alguien borró los selects, los volvemos a crear
+      const bar = qs('#filters-bar');
+      function ensure(id){ if(!qs(id)){ const el=document.createElement('select'); el.id=id.slice(1); bar.appendChild(el);} }
+      ensure('#filter-clients'); ensure('#filter-projects'); ensure('#filter-platforms'); ensure('#filter-owners'); ensure('#filter-status');
+      if(!qs('#posts-grid')){ const g=document.createElement('div'); g.id='posts-grid'; document.body.appendChild(g); }
+      if(!qs('#alerts')){ const a=document.createElement('div'); a.id='alerts'; document.body.prepend(a); }
+      if(!qs('#refresh-btn')){ const b=document.createElement('button'); b.id='refresh-btn'; b.textContent='Refresh'; document.querySelector('header div').appendChild(b); }
     }
 
-    // 1) Pinta dropdowns (evita [object Object]: todo es .name string)
-    fillSelect($clients,  "All Clients",   data.filters.clients);
-    fillSelect($projects, "All Projects",  data.filters.projects);
-    fillSelect($platforms,"All Platforms", data.filters.platforms);
-    fillSelect($owners,   "All Owners",    data.filters.owners);
-    fillSelect($status,   "All Status",    data.filters.statuses);
+    function bind(){
+      $clients   = qs('#filter-clients');
+      $projects  = qs('#filter-projects');
+      $platforms = qs('#filter-platforms');
+      $owners    = qs('#filter-owners');
+      $status    = qs('#filter-status');
+      $grid      = qs('#posts-grid');
+      $alerts    = qs('#alerts');
+      $refresh   = qs('#refresh-btn');
 
-    // Mantén selección previa si existe en el set
-    keepValueOrDefault($clients,  state.client,  "All Clients");
-    keepValueOrDefault($projects, state.project, "All Projects");
-    keepValueOrDefault($platforms,state.platform,"All Platforms");
-    keepValueOrDefault($owners,   state.owner,   "All Owners");
-    keepValueOrDefault($status,   state.status,  "All Status");
+      $clients.onchange   = ()=>{ state.client  = $clients.value;  load(); };
+      $projects.onchange  = ()=>{ state.project = $projects.value; load(); };
+      $platforms.onchange = ()=>{ state.platform= $platforms.value;load(); };
+      $owners.onchange    = ()=>{ state.owner   = $owners.value;   load(); };
+      $status.onchange    = ()=>{ state.status  = $status.value;   load(); };
+      $refresh.onclick    = ()=> load();
+    }
 
-    // 2) Pinta grid
-    renderGrid(data.posts || []);
-  }
+    function alert(msg){
+      $alerts.innerHTML = `<div class="alert">${esc(msg)}</div>`;
+    }
 
-  function fillSelect($el, defaultLabel, arr) {
-    const html = [
-      `<option>${defaultLabel}</option>`,
-      ...(arr || []).map(x => `<option value="${escapeHtml(x.name)}">${escapeHtml(x.name)}</option>`),
-    ].join("");
-    $el.innerHTML = html;
-  }
+    function clearAlert(){ $alerts.innerHTML = ""; }
 
-  function keepValueOrDefault($el, val, def) {
-    const has = Array.from($el.options).some(o => o.value === val);
-    $el.value = has ? val : def;
-  }
+    function fillSelect($el, def, arr){
+      const opts = [`<option>${esc(def)}</option>`].concat(
+        (arr||[]).map(x=>`<option value="${esc(x.name)}">${esc(x.name)}</option>`)
+      ).join("");
+      $el.innerHTML = opts;
+    }
 
-  function renderGrid(posts) {
-    $grid.innerHTML = posts.map(cardHTML).join("") || `<div style="opacity:.6">No hay posts</div>`;
-  }
+    function keepValueOrDefault($el, val, def){
+      const has = Array.from($el.options).some(o => o.value === val);
+      $el.value = has ? val : def;
+    }
 
-  function cardHTML(p) {
-    const img = p.attachment
-      ? `<img src="${p.attachment}" alt="${escapeHtml(p.title)}" style="width:100%;height:120px;object-fit:cover;" />`
-      : `<div style="width:100%;height:120px;background:#e9e9e9;display:flex;align-items:center;justify-content:center;color:#999">No image</div>`;
+    function card(p){
+      const top = p.attachment
+        ? `<img class="thumb" src="${esc(p.attachment)}" alt="${esc(p.title)}">`
+        : `<div class="ph">No image</div>`;
+      const pin = p.pinned ? `<span class="pin">Pinned</span>` : "";
+      const date = p.publishDate ? `<div class="muted" style="font-size:12px">${esc(p.publishDate)}</div>` : "";
+      const clients = (p.clients && p.clients.length) ? `<div class="muted" style="font-size:12px">${esc(p.clients.join(", "))}</div>` : "";
+      return `<article class="card">${pin}${top}<div class="meta"><div style="font-weight:600">${esc(p.title||"Untitled")}</div>${date}${clients}</div></article>`;
+    }
 
-    const date = p.publishDate ? `<div style="font-size:.75rem;color:#666">${p.publishDate}</div>` : "";
-    const clients = p.clients?.length ? `<div style="font-size:.75rem;color:#444">${p.clients.join(", ")}</div>` : "";
+    async function load(){
+      clearAlert();
+      $grid.innerHTML = `<div class="muted" style="padding:0 24px">Cargando…</div>`;
+      const qs = new URLSearchParams(state).toString();
+      let data;
+      try{
+        const res = await fetch('/api/grid?'+qs, { cache:'no-store' });
+        data = await res.json();
+      }catch(e){
+        alert("No se pudo conectar con /api/grid.");
+        $grid.innerHTML = "";
+        return;
+      }
 
-    const pin = p.pinned
-      ? `<span style="position:absolute;top:6px;right:6px;background:#111;color:#fff;font-size:.65rem;border-radius:999px;padding:2px 6px">Pinned</span>`
-      : "";
+      if(!data || !data.ok){
+        alert(data?.error || "Respuesta inválida del backend.");
+        $grid.innerHTML = "";
+        return;
+      }
 
-    return `
-      <article style="background:#f6f6f6;border-radius:16px;overflow:hidden;position:relative;min-height:160px">
-        ${img}
-        ${pin}
-        <div style="padding:.75rem">
-          <div style="font-weight:600">${escapeHtml(p.title || "Untitled")}</div>
-          ${date}
-          ${clients}
-        </div>
-      </article>
-    `;
-  }
+      // Dropdowns
+      fillSelect($clients,  "All Clients",   data.filters.clients);
+      fillSelect($projects, "All Projects",  data.filters.projects);
+      fillSelect($platforms,"All Platforms", data.filters.platforms);
+      fillSelect($owners,   "All Owners",    data.filters.owners);
+      fillSelect($status,   "All Status",    data.filters.statuses);
 
-  function escapeHtml(s) {
-    return (s || "").replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[m]));
-  }
+      keepValueOrDefault($clients,  state.client,  "All Clients");
+      keepValueOrDefault($projects, state.project, "All Projects");
+      keepValueOrDefault($platforms,state.platform,"All Platforms");
+      keepValueOrDefault($owners,   state.owner,   "All Owners");
+      keepValueOrDefault($status,   state.status,  "All Status");
 
-  // eventos
-  $clients.addEventListener('change',  () => { state.client  = $clients.value;  loadData(); });
-  $projects.addEventListener('change', () => { state.project = $projects.value; loadData(); });
-  $platforms.addEventListener('change',() => { state.platform= $platforms.value;loadData(); });
-  $owners.addEventListener('change',   () => { state.owner   = $owners.value;   loadData(); });
-  $status.addEventListener('change',   () => { state.status  = $status.value;   loadData(); });
-  $refresh.addEventListener('click',   () => { loadData(); });
+      // Grid
+      if(!data.posts || !data.posts.length){
+        $grid.innerHTML = `<div class="muted" style="padding:0 24px">No hay posts</div>`;
+      }else{
+        $grid.innerHTML = data.posts.map(card).join("");
+      }
+    }
 
-  // primera carga
-  loadData();
-</script>
+    function init(){
+      ensureDOM();
+      bind();
+      load();
+    }
+  })();
+  </script>
+</body>
+</html>
