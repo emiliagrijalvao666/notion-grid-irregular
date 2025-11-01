@@ -9,9 +9,13 @@
 <body>
   <div id="app" class="wrap">
     <div class="toolbar">
-      <button id="btnRefresh" class="btn btn--refresh">
-        <span class="ico-refresh"></span> Refresh
-      </button>
+      <div class="toolbar__left">
+        <button id="btnRefresh" class="btn btn--refresh">
+          <span class="ico-refresh"></span> Refresh
+        </button>
+        <button id="btnClear" class="btn btn--ghost">Clear filters</button>
+      </div>
+
       <div class="filters" id="filters">
         <div class="select">
           <button class="select__btn" id="fClient">All Clients</button>
@@ -48,19 +52,19 @@
     <div class="modal__backdrop" id="modalBackdrop"></div>
     <div class="modal__panel" role="dialog" aria-modal="true">
       <button class="modal__close" id="modalClose" aria-label="Close">✕</button>
+
       <div class="viewer">
         <div class="viewer__stage" id="vStage"></div>
-        <div class="viewer__nav">
-          <button class="nav prev" id="vPrev" aria-label="Prev">‹</button>
-          <div class="viewer__dots" id="vDots"></div>
-          <button class="nav next" id="vNext" aria-label="Next">›</button>
-        </div>
+
+        <button class="nav prev" id="vPrev" aria-label="Prev">‹</button>
+        <div class="viewer__dots" id="vDots"></div>
+        <button class="nav next" id="vNext" aria-label="Next">›</button>
+
         <div class="viewer__copy" id="vCopy"></div>
       </div>
     </div>
   </div>
 
-  <!-- Importa el JS como archivo externo. No pegues código aquí. -->
   <script type="module" src="./index.js"></script>
 </body>
 </html>
