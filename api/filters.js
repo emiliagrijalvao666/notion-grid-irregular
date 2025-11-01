@@ -1,198 +1,170 @@
-// api/filters.js
-// Vercel serverless (Node.js). Install: npm i @notionhq/client
-const { Client } = require('@notionhq/client');
+// /api/filters.js
+import { Client } from "@notionhq/client";
 
-const NOTION_TOKEN = process.env.NOTION_TOKEN;
-const NOTION_DB_CONTENT_ID = process.env.NOTION_DB_CONTENT_ID;
-const NOTION_DB_CLIENTS_ID = process.env.NOTION_DB_CLIENTS_ID;
-const CACHE_TTL = parseInt(process.env.CACHE_TTL_SECONDS || '300', 10); // default 5 min
+const notion = new Client({ auth: process.env.NOTION_TOKEN });
+const DB_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ID || process.env.NOTION_DB_CONTENT;
 
-if (!NOTION_TOKEN || !NOTION_DB_CONTENT_ID || !NOTION_DB_CLIENTS_ID) {
-  console.error('Missing env vars. Please set NOTION_TOKEN, NOTION_DB_CONTENT_ID, NOTION_DB_CLIENTS_ID');
+function getRollupNames(prop) {
+  // rollup → array de relaciones → cada una tiene title
+  if (!prop) return [];
+  if (prop.type === "rollup") {
+    const arr = prop.rollup?.array || [];
+    return arr
+      .map((item) => {
+        // item puede ser 'title', 'rich_text' o 'people'
+        if (item.type === "title" && item.title.length) {
+          return item.title.map(t => t.plain_text).join(" ");
+        }
+        if (item.type === "rich_text" && item.rich_text.length) {
+          return item.rich_text.map(t => t.plain_text).join(" ");
+        }
+        if (item.type === "people" && item.people.length) {
+          return item.people.map(p => p.name).join(" ");
+        }
+        // si es una page relation: suele venir como 'relation'
+        if (item.type === "relation" && item.relation.length) {
+          // aquí no tenemos el título directamente
+          return null;
+        }
+        return null;
+      })
+      .filter(Boolean);
+  }
+  return [];
 }
 
-const notion = new Client({ auth: NOTION_TOKEN });
-
-// Simple in-memory cache for serverless invocation (works per warm instance)
-let CACHE = { ts: 0, payload: null };
-
-/** Helper: extract client names/ids from a post object */
-function extractClientsFromPost(p) {
-  // 3 possibilities:
-  // 1) relation present: properties.PostClient.relation -> [{id:...}, ...]
-  // 2) rollup present: properties.PostClient.rollup -> array with title/text
-  // 3) fallback: properties.PostClient?.select/text
-  const props = p.properties || {};
-  const key = props.PostClient || props['PostClient'] || props['postclient'];
-  const result = [];
-
-  if (!key) return result;
-
-  // relation
-  if (key.relation && Array.isArray(key.relation) && key.relation.length) {
-    for (const r of key.relation) {
-      if (r.id) result.push({ id: r.id, name: null });
-    }
+function getRelationNames(prop) {
+  if (!prop) return [];
+  if (prop.type === "relation") {
+    // ojo: relation sola NO trae el nombre, solo el id de la page
+    // así que aquí sólo vamos a devolver el id para no romper
+    return prop.relation.map((r) => r.id);
   }
-
-  // rollup
-  if (key.rollup && Array.isArray(key.rollup) && key.rollup.length) {
-    // try to get a textual name from the rollup item
-    for (const item of key.rollup) {
-      // Common forms: title array or plain_text
-      if (item.title && Array.isArray(item.title) && item.title[0] && item.title[0].plain_text) {
-        result.push({ id: null, name: item.title[0].plain_text });
-      } else if (typeof item === 'string') {
-        result.push({ id: null, name: item });
-      } else if (item.name) {
-        result.push({ id: null, name: item.name });
-      }
-    }
-  }
-
-  // sometimes Notion returns plain text in rich_text
-  if (key.rich_text && Array.isArray(key.rich_text) && key.rich_text.length) {
-    const t = key.rich_text.map(t => t.plain_text).join('').trim();
-    if (t) result.push({ id: null, name: t });
-  }
-
-  return result;
+  return [];
 }
 
-/** Fetch pages from Content DB (paginated), but stop early if too many pages */
-async function fetchAllPosts(limitPages = 20) {
-  const pageSize = 100;
-  let cursor = undefined;
-  let pages = 0;
-  const all = [];
-
-  while (pages < limitPages) {
-    pages++;
-    const body = {
-      database_id: NOTION_DB_CONTENT_ID,
-      page_size: pageSize,
-      sorts: [{ property: 'Publish Date', direction: 'descending' }]
-    };
-
-    if (cursor) body.start_cursor = cursor;
-
-    const res = await notion.databases.query(body);
-    if (!res || !Array.isArray(res.results)) break;
-    all.push(...res.results);
-    if (!res.has_more) break;
-    cursor = res.next_cursor;
+function getSelectValues(prop) {
+  if (!prop) return [];
+  if (prop.type === "select") {
+    return [prop.select.name];
   }
-
-  return all;
+  if (prop.type === "multi_select") {
+    return prop.multi_select.map((m) => m.name);
+  }
+  return [];
 }
 
-/** Fetch clients DB (to map id->name) */
-async function fetchClientsMap() {
-  const map = new Map();
-  const pageSize = 100;
-  let cursor = undefined;
-  while (true) {
-    const body = { database_id: NOTION_DB_CLIENTS_ID, page_size: pageSize };
-    if (cursor) body.start_cursor = cursor;
-    const res = await notion.databases.query(body);
-    if (!res) break;
-    for (const p of res.results) {
-      const nameProp = p.properties?.Name || p.properties?.name;
-      let name = null;
-      if (nameProp?.title && nameProp.title[0]) name = nameProp.title.map(t => t.plain_text).join('');
-      map.set(p.id, name || null);
-    }
-    if (!res.has_more) break;
-    cursor = res.next_cursor;
+function getPeople(prop) {
+  if (!prop) return [];
+  if (prop.type === "people") {
+    return prop.people.map((p) => p.name || p.id);
   }
-  return map;
+  return [];
 }
 
-module.exports = async (req, res) => {
+export default async function handler(req, res) {
+  if (!DB_ID) {
+    return res.status(500).json({ ok: false, error: "Missing database id" });
+  }
+
+  const filter = {
+    and: [
+      {
+        or: [
+          { property: "Hide", checkbox: { equals: false } },
+          { property: "Hide", checkbox: { is_empty: true } },
+        ],
+      },
+      {
+        or: [
+          { property: "Archivado", checkbox: { equals: false } },
+          { property: "Archivado", checkbox: { is_empty: true } },
+        ],
+      },
+    ],
+  };
+
+  let hasMore = true;
+  let start_cursor = undefined;
+
+  const clientCounts = {};
+  const projectCounts = {};
+  const platformSet = new Set();
+  const ownerCounts = {};
+  const statusSet = new Set();
+
   try {
-    // Cache check
-    if (CACHE.payload && (Date.now() - CACHE.ts) / 1000 < CACHE_TTL) {
-      return res.json({ ok: true, cached: true, ...CACHE.payload });
-    }
+    while (hasMore) {
+      const resp = await notion.databases.query({
+        database_id: DB_ID,
+        filter,
+        start_cursor,
+      });
 
-    // Fetch posts (bounded)
-    const posts = await fetchAllPosts(20); // 20 * 100 = up to 2000 posts (tweak if needed)
-    const clientsMap = await fetchClientsMap(); // id -> name
+      for (const page of resp.results) {
+        const props = page.properties || {};
 
-    // counts
-    const clientCounts = new Map();
-    const projectCounts = new Map();
-    const ownerCounts = new Map();
-    const platformCounts = new Map();
+        // 1) CLIENTES desde PostClient (rollup)
+        const rollupClients = getRollupNames(props.PostClient);
+        rollupClients.forEach((name) => {
+          clientCounts[name] = (clientCounts[name] || 0) + 1;
+        });
 
-    for (const p of posts) {
-      // skip archived/hidden if those properties exist and are true
-      const archived = p.properties?.Archivado?.checkbox === true;
-      const hidden = p.properties?.Hide?.checkbox === true;
-      if (archived || hidden) continue;
+        // 2) PROYECTOS desde PostProject (relation)
+        const relProjects = getRelationNames(props.PostProject);
+        // como relation no trae el nombre, al menos guardamos el id para que no se rompa
+        relProjects.forEach((id) => {
+          if (!id) return;
+          projectCounts[id] = (projectCounts[id] || 0) + 1;
+        });
 
-      // owner
-      const owner = p.properties?.Owner?.people?.[0]?.name;
-      if (owner) ownerCounts.set(owner, (ownerCounts.get(owner) || 0) + 1);
+        // 3) PLATAFORMAS
+        const plats = getSelectValues(props.Platforms || props.Platform || props.Plataforma);
+        plats.forEach((p) => platformSet.add(p));
 
-      // platforms (multi_select)
-      const platforms = p.properties?.Platform?.multi_select || [];
-      for (const pl of platforms) {
-        const name = pl.name || pl;
-        if (name) platformCounts.set(name, (platformCounts.get(name) || 0) + 1);
-      }
+        // 4) OWNERS
+        const owners = getPeople(props.Owner || props.Owners);
+        owners.forEach((o) => {
+          ownerCounts[o] = (ownerCounts[o] || 0) + 1;
+        });
 
-      // client(s)
-      const cands = extractClientsFromPost(p);
-      if (cands.length) {
-        for (const c of cands) {
-          // Prefer id -> resolve name from clientsMap
-          let name = c.name;
-          if (!name && c.id && clientsMap.has(c.id)) name = clientsMap.get(c.id);
-          if (!name) name = c.name || 'Unknown';
-          clientCounts.set(name, (clientCounts.get(name) || 0) + 1);
-        }
-      } else {
-        // fallback: maybe a text field "Client" exists
-        const plainClient = (p.properties?.Client || p.properties?.ClientName)?.rich_text?.map(t => t.plain_text).join('') ||
-                            p.properties?.Client?.title?.map(t => t.plain_text).join('');
-        if (plainClient) clientCounts.set(plainClient, (clientCounts.get(plainClient) || 0) + 1);
-      }
-
-      // projects (try PostProject rollup)
-      const projProp = p.properties?.PostProject;
-      if (projProp) {
-        // try rollup extraction
-        if (projProp.rollup && Array.isArray(projProp.rollup) && projProp.rollup.length) {
-          for (const item of projProp.rollup) {
-            const name = (item.title && item.title[0] && item.title[0].plain_text) || item.name || null;
-            if (name) projectCounts.set(name, (projectCounts.get(name) || 0) + 1);
-          }
-        } else if (projProp.relation && projProp.relation.length) {
-          // relation -> name could be looked up but skip (clients map only)
-          projectCounts.set('RelatedProject', (projectCounts.get('RelatedProject') || 0) + 1);
+        // 5) STATUS (para que el frontend pueda pintar el dropdown real)
+        if (props.Status && props.Status.type === "status" && props.Status.status) {
+          statusSet.add(props.Status.status.name);
         }
       }
+
+      hasMore = resp.has_more;
+      start_cursor = resp.next_cursor;
     }
 
-    // convert to sorted arrays
-    const toSorted = (map) => Array.from(map.entries()).map(([name, count]) => ({ name, count }))
+    // ordenar clientes por count desc
+    const clients = Object.entries(clientCounts)
+      .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count);
 
-    const payload = {
-      clients: toSorted(clientCounts),
-      projects: toSorted(projectCounts),
-      platforms: toSorted(platformCounts),
-      owners: toSorted(ownerCounts),
-      total_posts_scanned: posts.length,
-    };
+    // proyectos: por ahora vendrán con id, hasta que configuremos ClientName/ProjectName
+    const projects = Object.entries(projectCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
 
-    // cache
-    CACHE = { ts: Date.now(), payload };
+    const platforms = Array.from(platformSet).filter(Boolean);
+    const owners = Object.entries(ownerCounts)
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count);
 
-    return res.json({ ok: true, cached: false, ...payload });
+    const statuses = Array.from(statusSet).filter(Boolean);
+
+    return res.json({
+      ok: true,
+      clients,
+      projects,
+      platforms,
+      owners,
+      statuses,
+    });
   } catch (err) {
-    console.error('filters error', err);
+    console.error(err);
     return res.status(500).json({ ok: false, error: err.message });
   }
-};
+}
