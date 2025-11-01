@@ -1,250 +1,119 @@
-<!DOCTYPE html>
-<html lang="es">
-  <head>
-    <meta charset="UTF-8" />
-    <title>Posts</title>
-    <link rel="stylesheet" href="/styles.css" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-  </head>
-  <body>
-    <div class="app-shell">
-      <header class="topbar">
-        <h1 class="page-title">Posts <span id="postCount"></span></h1>
+<script>
+// ====== 1. REFERENCIAS A LOS SELECTS QUE YA TIENES ======
+const selClient  = document.getElementById('selClient')  || document.getElementById('client-filter');
+const selProject = document.getElementById('selProject') || document.getElementById('project-filter');
+const selPlatform= document.getElementById('selPlatform')|| document.getElementById('platform-filter');
+const selStatus  = document.getElementById('selStatus')  || document.getElementById('status-filter');
+const ownerPanel = document.getElementById('owner-options'); // si aún no tienes esto, no pasa nada
 
-        <div class="actions">
-          <button id="refreshBtn" class="btn round">Refresh</button>
-          <input id="searchInput" class="search" type="text" placeholder="Buscar..." />
-        </div>
-      </header>
+// ====== 2. FUNCIÓN NUEVA: TRAER /api/filters ======
+async function loadFilters() {
+  let data;
+  try {
+    const res = await fetch('/api/filters');
+    data = await res.json();
+  } catch (err) {
+    console.warn('No pude leer /api/filters', err);
+    return;
+  }
 
-      <div class="filters">
-        <select id="fClients" class="filter">
-          <option value="all">All Clients</option>
-        </select>
+  // estructura esperada:
+  // { clients: [{name,count}], projects: [...], platforms: [...], owners: [...] }
 
-        <select id="fProjects" class="filter">
-          <option value="all">All Projects</option>
-        </select>
+  // --- CLIENTES ---
+  if (selClient) {
+    selClient.innerHTML = ''; // limpiar
+    const optAll = document.createElement('option');
+    optAll.value = '';
+    optAll.textContent = 'All Clients';
+    selClient.appendChild(optAll);
 
-        <select id="fBrands" class="filter" disabled>
-          <option value="all">All Brands</option>
-        </select>
+    (data.clients || []).forEach(item => {
+      const opt = document.createElement('option');
+      opt.value = item.name;
+      // si no hay nombre, no lo mostramos
+      if (!item.name) return;
+      opt.textContent = `${item.name} (${item.count || 0})`;
+      selClient.appendChild(opt);
+    });
+  }
 
-        <select id="fPlatforms" class="filter">
-          <option value="all">All Platforms</option>
-        </select>
+  // --- PROJECTS ---
+  if (selProject) {
+    selProject.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = '';
+    optAll.textContent = 'All Projects';
+    selProject.appendChild(optAll);
 
-        <select id="fOwners" class="filter">
-          <option value="all">All Owners</option>
-        </select>
+    (data.projects || []).forEach(item => {
+      if (!item.name) return;
+      const opt = document.createElement('option');
+      opt.value = item.name;
+      opt.textContent = `${item.name} (${item.count || 0})`;
+      selProject.appendChild(opt);
+    });
+  }
 
-        <select id="fStatus" class="filter">
-          <option value="publishedOnly">Published Only</option>
-          <option value="all">All Status</option>
-        </select>
-      </div>
+  // --- PLATFORMS ---
+  if (selPlatform) {
+    selPlatform.innerHTML = '';
+    const optAll = document.createElement('option');
+    optAll.value = '';
+    optAll.textContent = 'All Platforms';
+    selPlatform.appendChild(optAll);
 
-      <main>
-        <div id="grid" class="grid"></div>
-        <button id="loadMore" class="btn load">Load more</button>
-      </main>
-    </div>
+    (data.platforms || []).forEach(name => {
+      const opt = document.createElement('option');
+      opt.value = name;
+      opt.textContent = name;
+      selPlatform.appendChild(opt);
+    });
+  }
 
-    <script>
-      const state = {
-        allPosts: [],
-        visiblePosts: [],
-        pageSize: 24,
-        filters: {
-          client: "all",
-          project: "all",
-          brand: "all",
-          platform: "all",
-          owner: "all",
-          status: "publishedOnly",
-          search: ""
-        }
-      };
+  // --- STATUS ---
+  if (selStatus) {
+    selStatus.innerHTML = '';
+    // opción 1: published only
+    const optPub = document.createElement('option');
+    optPub.value = 'published';
+    optPub.textContent = 'Published only';
+    selStatus.appendChild(optPub);
+    // opción 2: all status
+    const optAll = document.createElement('option');
+    optAll.value = '';
+    optAll.textContent = 'All Status';
+    selStatus.appendChild(optAll);
+  }
 
-      const els = {
-        grid: document.getElementById("grid"),
-        postCount: document.getElementById("postCount"),
-        fClients: document.getElementById("fClients"),
-        fProjects: document.getElementById("fProjects"),
-        fBrands: document.getElementById("fBrands"),
-        fPlatforms: document.getElementById("fPlatforms"),
-        fOwners: document.getElementById("fOwners"),
-        fStatus: document.getElementById("fStatus"),
-        refreshBtn: document.getElementById("refreshBtn"),
-        searchInput: document.getElementById("searchInput"),
-        loadMore: document.getElementById("loadMore")
-      };
+  // --- OWNERS (panel colapsable) ---
+  if (ownerPanel && Array.isArray(data.owners)) {
+    ownerPanel.innerHTML = '';
+    data.owners.forEach((o, idx) => {
+      const row = document.createElement('label');
+      row.className = 'owner-option';
+      row.innerHTML = `
+        <input type="checkbox" name="owner" value="${o.name}">
+        <span class="owner-badge" style="background:${o.color || '#666'}">${(o.initials || o.name?.slice(0,2) || '??').toUpperCase()}</span>
+        <span class="owner-name">${o.name}</span>
+        <span class="owner-count">(${o.count || 0})</span>
+      `;
+      ownerPanel.appendChild(row);
+    });
+  }
+}
 
-      async function fetchData() {
-        const qs = new URLSearchParams();
-        if (state.filters.status) qs.set("status", state.filters.status);
-        const res = await fetch("/api/grid?" + qs.toString());
-        const data = await res.json();
-        if (!data.ok) {
-          els.grid.innerHTML = `<div class="error">${data.error}</div>`;
-          return;
-        }
-        state.allPosts = data.posts || [];
-        buildFilterOptions(data.filters || {});
-        applyFilters();
-      }
+// ====== 3. LLAMAR A TODO AL INICIO ======
+async function bootstrap() {
+  // 1) primero filtros
+  await loadFilters();
+  // 2) luego posts
+  await fetchPosts();
+  buildOptions?.(); // si tenías esta función antes
+  applyFilters?.();
+}
 
-      function buildFilterOptions(f) {
-        // clients
-        els.fClients.innerHTML = `<option value="all">All Clients</option>`;
-        (f.clients || []).forEach((c) => {
-          els.fClients.innerHTML += `<option value="${c}">${c}</option>`;
-        });
-
-        // projects
-        els.fProjects.innerHTML = `<option value="all">All Projects</option>`;
-        (f.projects || []).forEach((p) => {
-          els.fProjects.innerHTML += `<option value="${p}">${p}</option>`;
-        });
-
-        // brands (solo activamos si hay brands)
-        els.fBrands.innerHTML = `<option value="all">All Brands</option>`;
-        if ((f.brands || []).length) {
-          els.fBrands.removeAttribute("disabled");
-          (f.brands || []).forEach((b) => {
-            els.fBrands.innerHTML += `<option value="${b}">${b}</option>`;
-          });
-        } else {
-          els.fBrands.setAttribute("disabled", "true");
-        }
-
-        // platforms
-        els.fPlatforms.innerHTML = `<option value="all">All Platforms</option>`;
-        (f.platforms || []).forEach((p) => {
-          els.fPlatforms.innerHTML += `<option value="${p}">${p}</option>`;
-        });
-
-        // owners
-        els.fOwners.innerHTML = `<option value="all">All Owners</option>`;
-        (f.owners || []).forEach((o) => {
-          els.fOwners.innerHTML += `<option value="${o}">${o}</option>`;
-        });
-      }
-
-      function applyFilters() {
-        const {
-          client, project, brand,
-          platform, owner, status, search
-        } = state.filters;
-
-        let list = [...state.allPosts];
-
-        // filtro por client
-        if (client !== "all") {
-          list = list.filter(p => (p.clients || []).includes(client));
-        }
-
-        // filtro por project
-        if (project !== "all") {
-          list = list.filter(p => (p.projectNames || []).includes(project));
-        }
-
-        // filtro por brand
-        if (brand !== "all") {
-          list = list.filter(p => (p.brands || []).includes(brand));
-        }
-
-        // filtro por platform
-        if (platform !== "all") {
-          list = list.filter(p => (p.platforms || []).includes(platform));
-        }
-
-        // filtro por owner
-        if (owner !== "all") {
-          list = list.filter(p => (p.owners || []).includes(owner));
-        }
-
-        // search
-        if (search && search.trim()) {
-          const q = search.trim().toLowerCase();
-          list = list.filter(p =>
-            (p.title || "").toLowerCase().includes(q) ||
-            (p.copy || "").toLowerCase().includes(q)
-          );
-        }
-
-        state.visiblePosts = list.slice(0, state.pageSize);
-        renderGrid();
-      }
-
-      function renderGrid() {
-        els.grid.innerHTML = "";
-        state.visiblePosts.forEach((p) => {
-          const imgUrl =
-            (p.assets && p.assets[0] && p.assets[0].url) ? p.assets[0].url : "";
-          const card = document.createElement("div");
-          card.className = "card";
-          card.innerHTML = `
-            <div class="card-img">
-              ${imgUrl ? `<img src="${imgUrl}" alt="${p.title || ""}" />` : `<div class="noimg">No image</div>`}
-            </div>
-            <div class="card-meta">
-              <div class="card-title">${p.title || "Untitled"}</div>
-              ${p.date ? `<div class="card-date">${p.date}</div>` : ""}
-            </div>
-          `;
-          els.grid.appendChild(card);
-        });
-
-        els.postCount.textContent = `(${state.visiblePosts.length})`;
-      }
-
-      // eventos
-      els.fClients.addEventListener("change", (e) => {
-        state.filters.client = e.target.value;
-        // si elige client, podemos habilitar brands/proyectos específicos más adelante
-        applyFilters();
-      });
-
-      els.fProjects.addEventListener("change", (e) => {
-        state.filters.project = e.target.value;
-        applyFilters();
-      });
-
-      els.fBrands.addEventListener("change", (e) => {
-        state.filters.brand = e.target.value;
-        applyFilters();
-      });
-
-      els.fPlatforms.addEventListener("change", (e) => {
-        state.filters.platform = e.target.value;
-        applyFilters();
-      });
-
-      els.fOwners.addEventListener("change", (e) => {
-        state.filters.owner = e.target.value;
-        applyFilters();
-      });
-
-      els.fStatus.addEventListener("change", async (e) => {
-        state.filters.status = e.target.value;
-        await fetchData();
-      });
-
-      els.refreshBtn.addEventListener("click", fetchData);
-
-      els.searchInput.addEventListener("input", (e) => {
-        state.filters.search = e.target.value;
-        applyFilters();
-      });
-
-      els.loadMore.addEventListener("click", () => {
-        state.pageSize += 24;
-        applyFilters();
-      });
-
-      // inicial
-      fetchData();
-    </script>
-  </body>
-</html>
+// si ya tenías un bootstrap declarado, reemplaza su contenido por este.
+// si no tenías, deja este:
+bootstrap().catch(err => console.error(err));
+</script>
