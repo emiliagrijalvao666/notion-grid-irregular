@@ -78,3 +78,17 @@
   <script type="module" src="/index.js"></script>
 </body>
 </html>
+// Reemplaza estas helpers por versiones seguras:
+function showOverlay(v){ if(els.overlay){ els.overlay.hidden = !v; } }
+function showMoreLoading(v){
+  if(!els.more) return;
+  els.more.disabled = v; els.more.textContent = v ? 'Loading…' : 'Load more';
+}
+// En init, justo al inicio, añade un guard:
+async function init(){
+  // sanity check de nodos requeridos
+  const required = ['grid','btnMore','btnRefresh','btnClear','filters','fClient','fProject','fPlatform','fOwner','fStatus','mClient','mProject','mPlatform','mOwner','mStatus'];
+  const missing = required.filter(k => !document.getElementById(k));
+  if(missing.length){ console.error('Faltan nodos en el HTML:', missing); return; }
+  // ...
+}
