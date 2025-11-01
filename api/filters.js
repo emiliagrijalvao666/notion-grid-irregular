@@ -1,108 +1,130 @@
-import { notion, DB_IDS } from "./_notion.js";
-import { PROP, getExistingKey, getTitleFromPage } from "./schema.js";
+import { notion, DB, err, getDbMeta, getPageTitle } from "./_notion.js";
+import { detectContentSchema } from "./schema.js";
 
 export default async function handler(req, res){
-  try {
-    if (req.method !== "GET") return res.status(405).json({ ok:false, error:"Method not allowed" });
-    if (!DB_IDS.posts) return res.status(400).json({ ok:false, error:"Missing NOTION_DATABASE_ID" });
+  if(req.method !== 'GET') return err(res,405,'Method not allowed');
 
-    const meta = await notion.databases.retrieve({ database_id: DB_IDS.posts }).catch(()=>null);
+  if(!DB.content) return err(res,500,'Missing CONTENT_DB_ID');
 
-    // Detectar claves existentes
-    const ownersKey     = meta?.properties?.[PROP.owners] ? PROP.owners : null;
-    const platformKey   = getExistingKey(meta, PROP.platformCandidates);
-    const clientRelKey  = getExistingKey(meta, PROP.clientRelCandidates);
-    const projectRelKey = getExistingKey(meta, PROP.projectRelCandidates);
+  // 1) Leer schema de la DB de contenido
+  const schema = await detectContentSchema(DB.content);
+  if(!schema) return err(res,500,'Cannot read Content DB schema');
 
-    // 1) Opciones de esquema
-    const statuses = meta?.properties?.[PROP.status]?.status?.options?.map(o=>o.name).filter(Boolean) || [];
-    const platforms = platformKey
-      ? (meta?.properties?.[platformKey]?.multi_select?.options?.map(o=>o.name).filter(Boolean) || [])
-      : [];
+  // 2) Platforms / Status directamente desde opciones del schema
+  const meta = await getDbMeta(DB.content);
+  const platforms = (meta.properties[schema.platformKey]?.multi_select?.options || meta.properties[schema.platformKey]?.select?.options || [])
+                     .map(o=>o.name)
+                     .filter(Boolean);
+  const statuses  = (meta.properties[schema.statusKey]?.status?.options || meta.properties[schema.statusKey]?.select?.options || [])
+                     .map(o=>o.name)
+                     .filter(Boolean);
 
-    // 2) Recorrer posts (hasta 1000) solo para recopilar owners y relations usados
-    const ownersMap = new Map();
-    const clientIds = new Set();
-    const projectIds = new Set();
+  // 3) Owners (únicos) desde páginas: solo IDs y nombres
+  const owners = [];
+  const ownerSeen = new Set();
+  let cursor = undefined;
+  for(let safety=0; safety<5; safety++){ // máx 5 páginas por performance
+    const resp = await notion.databases.query({
+      database_id: DB.content,
+      page_size: 50,
+      start_cursor: cursor
+    });
+    for(const r of resp.results){
+      const p = r.properties[schema.ownerKey];
+      if(p?.type==='people' && Array.isArray(p.people)){
+        p.people.forEach(user=>{
+          if(!ownerSeen.has(user.id)){
+            ownerSeen.add(user.id);
+            owners.push({ id:user.id, name: user.name || 'Unknown' });
+          }
+        });
+      }
+    }
+    if(!resp.has_more) break;
+    cursor = resp.next_cursor;
+  }
 
-    let cursor = undefined;
-    for (let i=0;i<10;i++){
-      const and = [];
-      // no filtro por hide/archivado aquí → propósito es solo recolectar universo de opciones
-      const resp = await notion.databases.query({
-        database_id: DB_IDS.posts,
-        page_size: 100,
-        start_cursor: cursor,
-        sorts: [{ timestamp:"created_time", direction:"descending" }]
-      });
-
-      for (const p of resp.results){
-        if (ownersKey){
-          (p.properties?.[ownersKey]?.people || [])
-            .forEach(pe => ownersMap.set(pe.id, pe.name || pe.person?.email || "Unknown"));
-        }
-        if (clientRelKey){
-          (p.properties?.[clientRelKey]?.relation || []).forEach(r => clientIds.add(r.id));
-        }
-        if (projectRelKey){
-          (p.properties?.[projectRelKey]?.relation || []).forEach(r => projectIds.add(r.id));
+  // 4) Clients desde relación en Content (resolviendo títulos)
+  const clients = [];
+  const clientSeen = new Map(); // id -> name
+  cursor = undefined;
+  for(let safety=0; safety<5; safety++){
+    const resp = await notion.databases.query({
+      database_id: DB.content,
+      page_size: 50,
+      start_cursor: cursor
+    });
+    for(const r of resp.results){
+      const rel = r.properties[schema.clientKey];
+      if(rel?.type==='relation' && Array.isArray(rel.relation)){
+        for(const relPg of rel.relation){
+          if(!clientSeen.has(relPg.id)){
+            clientSeen.set(relPg.id, null);
+          }
         }
       }
-      if (!resp.has_more) break;
-      cursor = resp.next_cursor;
     }
-
-    // 3) Mapear nombres reales desde DBs
-    const clients = DB_IDS.clients
-      ? await fetchNames(DB_IDS.clients, Array.from(clientIds))
-      : Array.from(clientIds).map(id => ({ id, name:id }));
-
-    const projects = DB_IDS.projects
-      ? await fetchProjects(DB_IDS.projects, Array.from(projectIds))
-      : Array.from(projectIds).map(id => ({ id, name:id, clientIds:[] }));
-
-    const owners = Array.from(ownersMap.entries())
-      .map(([id, name]) => ({ id, name }))
-      .sort((a,b)=>a.name.localeCompare(b.name));
-
-    return res.json({ ok:true, platforms, statuses, owners,
-      clients: clients.sort((a,b)=>a.name.localeCompare(b.name)),
-      projects: projects.sort((a,b)=>a.name.localeCompare(b.name)),
-    });
-
-  } catch (e) {
-    return res.status(500).json({ ok:false, error:e.message||"filters error" });
+    if(!resp.has_more) break;
+    cursor = resp.next_cursor;
   }
-}
+  // Resolver títulos de clientes
+  for(const id of clientSeen.keys()){
+    const name = await getPageTitle(id);
+    clientSeen.set(id, name);
+    clients.push({ id, name });
+  }
 
-// Helpers
-async function fetchNames(dbId, ids){
-  if (!ids.length) return [];
-  const out = [];
-  let cursor;
-  do{
-    const resp = await notion.databases.query({ database_id: dbId, page_size:100, start_cursor:cursor });
-    for (const p of resp.results){
-      if (!ids.includes(p.id)) continue;
-      out.push({ id:p.id, name: getTitleFromPage(p) || "Untitled" });
+  // 5) Projects: preferir DB de proyectos si existe, si no, desde relación en Content
+  const projects = [];
+  if(process.env.PROJECTS_DB_ID){
+    let pcursor = undefined;
+    for(let safety=0; safety<6; safety++){
+      const r = await notion.databases.query({
+        database_id: process.env.PROJECTS_DB_ID,
+        page_size: 50,
+        start_cursor: pcursor
+      });
+      for(const pg of r.results){
+        const nameProp = Object.values(pg.properties).find(p=>p.type==='title');
+        const name = (nameProp?.title||[]).map(t=>t.plain_text).join('').trim() || 'Untitled';
+
+        const rel = Object.values(pg.properties).find(p=>p.type==='relation'); // Client relation en Projects
+        const ids = rel?.relation?.map(x=>x.id) || [];
+        projects.push({ id: pg.id, name, clientIds: ids });
+      }
+      if(!r.has_more) break;
+      pcursor = r.next_cursor;
     }
-    cursor = resp.has_more ? resp.next_cursor : null;
-  } while (cursor);
-  return out;
-}
-async function fetchProjects(dbId, ids){
-  if (!ids.length) return [];
-  const out = [];
-  let cursor;
-  do{
-    const resp = await notion.databases.query({ database_id: dbId, page_size:100, start_cursor:cursor });
-    for (const p of resp.results){
-      if (!ids.includes(p.id)) continue;
-      const name = getTitleFromPage(p) || "Untitled";
-      const rel  = (p.properties?.Client?.relation || p.properties?.Main?.relation || []);
-      out.push({ id:p.id, name, clientIds: rel.map(r=>r.id) });
+  }else{
+    // Derivar desde Content (no ideal pero funciona)
+    const tmp = new Map(); // id -> {id,name, clientIds:Set}
+    cursor = undefined;
+    for(let safety=0; safety<5; safety++){
+      const r = await notion.databases.query({
+        database_id: DB.content, page_size: 50, start_cursor: cursor
+      });
+      for(const pg of r.results){
+        const proj = pg.properties[schema.projectKey];
+        const cli  = pg.properties[schema.clientKey];
+        const cIds = cli?.relation?.map(x=>x.id) || [];
+        const pRels = proj?.relation || [];
+        for(const rel of pRels){
+          if(!tmp.has(rel.id)) tmp.set(rel.id, { id: rel.id, name: null, clientIds: new Set() });
+          cIds.forEach(id=> tmp.get(rel.id).clientIds.add(id));
+        }
+      }
+      if(!r.has_more) break;
+      cursor = r.next_cursor;
     }
-    cursor = resp.has_more ? resp.next_cursor : null;
-  } while (cursor);
-  return out;
+    // Resolver nombres
+    for(const it of tmp.values()){
+      it.name = await getPageTitle(it.id);
+      projects.push({ id: it.id, name: it.name, clientIds: Array.from(it.clientIds) });
+    }
+  }
+
+  return res.status(200).json({
+    ok:true,
+    platforms, statuses, owners, clients, projects
+  });
 }
