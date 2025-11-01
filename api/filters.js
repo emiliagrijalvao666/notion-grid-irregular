@@ -3,158 +3,129 @@ import { Client } from "@notionhq/client";
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
-export default async function handler(req, res) {
-  try {
-    const {
-      NOTION_TOKEN,
-      NOTION_DATABASE_ID,
-      NOTION_DB_CLIENTS,
-      NOTION_DB_PROJECTS,
-    } = process.env;
+const CONTENT_DB = process.env.NOTION_DATABASE_ID;
+const CLIENTS_DB = process.env.NOTION_DB_CLIENTS;
+const PROJECTS_DB = process.env.NOTION_DB_PROJECTS;
 
-    if (!NOTION_TOKEN || !NOTION_DATABASE_ID) {
-      return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
-    }
-
-    // 1) Traer CLIENTS
-    let clients = [];
-    if (NOTION_DB_CLIENTS) {
-      clients = await fetchAllFromDB(NOTION_DB_CLIENTS);
-      clients = clients
-        .map((p) => ({
-          id: p.id,
-          name: getTitle(p, "Name") || getTitle(p, "Client") || "Sin nombre",
-        }))
-        .filter((c) => c.name && c.name !== "Sin nombre");
-    }
-
-    // 2) Traer PROJECTS
-    let projects = [];
-    if (NOTION_DB_PROJECTS) {
-      const rawProjects = await fetchAllFromDB(NOTION_DB_PROJECTS);
-      projects = rawProjects.map((p) => {
-        const name =
-          getTitle(p, "Project name") ||
-          getTitle(p, "Name") ||
-          "Sin nombre";
-
-        // relación hacia Clients en la DB Projects
-        const rel = p.properties?.Client;
-        let clientId = null;
-        if (rel && rel.type === "relation" && rel.relation.length > 0) {
-          clientId = rel.relation[0].id;
-        }
-
-        return {
-          id: p.id,
-          name,
-          client_id: clientId,
-        };
-      });
-    }
-
-    // 3) Para Platforms / Owners / Status necesitamos mirar el CONTENT
-    const contentPages = await fetchAllFromDB(NOTION_DATABASE_ID);
-
-    // platforms (multi select)
-    const platformsSet = new Map();
-    // owners (people)
-    const ownersSet = new Map();
-    // statuses (status)
-    const statusesSet = new Map();
-
-    for (const page of contentPages) {
-      // Platform
-      const plat = page.properties?.Platform;
-      if (plat && plat.type === "multi_select") {
-        for (const opt of plat.multi_select) {
-          if (!platformsSet.has(opt.id)) {
-            platformsSet.set(opt.id, { id: opt.id, name: opt.name });
-          }
-        }
-      }
-
-      // Owner
-      const owner = page.properties?.Owner;
-      if (owner && owner.type === "people") {
-        for (const person of owner.people) {
-          const name = person.name || person.email || person.id;
-          if (!ownersSet.has(person.id)) {
-            ownersSet.set(person.id, { id: person.id, name });
-          }
-        }
-      }
-
-      // Status
-      const status = page.properties?.Status;
-      if (status && status.type === "status" && status.status) {
-        const stId = status.status.id;
-        const stName = status.status.name;
-        if (!statusesSet.has(stId)) {
-          statusesSet.set(stId, { id: stId, name: stName });
-        }
-      }
-    }
-
-    const platforms = Array.from(platformsSet.values());
-    const owners = Array.from(ownersSet.values());
-    const statuses = Array.from(statusesSet.values());
-
-    return res.status(200).json({
-      ok: true,
-      filters: {
-        clients,
-        projects,
-        platforms,
-        owners,
-        statuses,
-      },
-    });
-  } catch (err) {
-    console.error("filters error:", err);
-    // Para que el front no vuelva a decir "A server error..."
-    return res.status(200).json({
-      ok: false,
-      error: err.message || "Error interno en /api/filters",
-      filters: {
-        clients: [],
-        projects: [],
-        platforms: [],
-        owners: [],
-        statuses: [],
-      },
-    });
-  }
-}
-
-async function fetchAllFromDB(database_id) {
+async function getAllFromDB(database_id) {
   const pages = [];
-  let hasMore = true;
   let cursor = undefined;
 
-  while (hasMore) {
+  do {
     const resp = await notion.databases.query({
       database_id,
       start_cursor: cursor,
       page_size: 100,
     });
-
     pages.push(...resp.results);
-    hasMore = resp.has_more;
-    cursor = resp.next_cursor;
-  }
+    cursor = resp.has_more ? resp.next_cursor : undefined;
+  } while (cursor);
 
   return pages;
 }
 
-function getTitle(page, propName) {
-  const prop = page.properties?.[propName];
-  if (!prop) return "";
-  if (prop.type === "title") {
-    return prop.title.map((t) => t.plain_text).join("") || "";
+export default async function handler(req, res) {
+  try {
+    if (!process.env.NOTION_TOKEN) {
+      return res.status(500).json({ ok: false, error: "Missing NOTION_TOKEN" });
+    }
+    if (!CONTENT_DB) {
+      return res.status(500).json({ ok: false, error: "Missing NOTION_DATABASE_ID" });
+    }
+
+    // 1) CLIENTS
+    let clients = [];
+    if (CLIENTS_DB) {
+      const clientPages = await getAllFromDB(CLIENTS_DB);
+      clients = clientPages.map((p) => {
+        const title = p.properties?.Name?.title?.[0]?.plain_text || "Sin nombre";
+        return {
+          id: p.id,
+          name: title,
+        };
+      });
+    }
+
+    // 2) PROJECTS
+    let projects = [];
+    if (PROJECTS_DB) {
+      const projectPages = await getAllFromDB(PROJECTS_DB);
+      projects = projectPages.map((p) => {
+        const title =
+          p.properties?.["Project name"]?.title?.[0]?.plain_text ||
+          p.properties?.Name?.title?.[0]?.plain_text ||
+          "Sin nombre";
+
+        // relación al cliente (puede venir vacía o múltiple)
+        const rel = p.properties?.["Client"]?.relation || [];
+        const clientIds = rel.map((r) => r.id);
+
+        return {
+          id: p.id,
+          name: title,
+          clientIds, // <- para el front "muéstrame solo los del cliente X"
+        };
+      });
+    }
+
+    // 3) CONTENT → owners, platforms, statuses
+    const contentPages = await notion.databases.query({
+      database_id: CONTENT_DB,
+      page_size: 100,
+    });
+
+    const ownersSet = new Map();
+    const platformsSet = new Set();
+    const statusesSet = new Set();
+
+    contentPages.results.forEach((page) => {
+      const props = page.properties || {};
+
+      // Owners (people)
+      const people = props["Owner"]?.people || [];
+      people.forEach((person) => {
+        const name = person.name || person.id;
+        ownersSet.set(person.id, name);
+      });
+
+      // Platforms (multi select)
+      const platformMS = props["Platform"]?.multi_select || [];
+      platformMS.forEach((pl) => {
+        if (pl.name) platformsSet.add(pl.name);
+      });
+
+      // Status (status)
+      const st = props["Status"]?.status?.name;
+      if (st) statusesSet.add(st);
+    });
+
+    const owners = Array.from(ownersSet.entries()).map(([id, name]) => ({
+      id,
+      name,
+    }));
+
+    const platforms = Array.from(platformsSet).map((name) => ({
+      id: name,
+      name,
+    }));
+
+    const statuses = Array.from(statusesSet).map((name) => ({
+      id: name,
+      name,
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      clients,
+      projects,
+      owners,
+      platforms,
+      statuses,
+    });
+  } catch (err) {
+    console.error("FILTERS ERROR:", err);
+    return res
+      .status(500)
+      .json({ ok: false, error: err.message || "Unknown error" });
   }
-  if (prop.type === "rich_text") {
-    return prop.rich_text.map((t) => t.plain_text).join("") || "";
-  }
-  return "";
 }
