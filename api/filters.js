@@ -5,7 +5,7 @@ const notion = new Client({ auth: process.env.NOTION_TOKEN });
 const DB_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ID;
 
 function safePlainTextFromTitleArray(arr = []) {
-  return arr.map(t => t.plain_text || "").join("").trim();
+  return (arr || []).map(t => t.plain_text || "").join("").trim();
 }
 
 function extractStringsFromProperty(prop) {
@@ -13,19 +13,19 @@ function extractStringsFromProperty(prop) {
 
   const type = prop.type;
 
-  // 1) title
+  // title
   if (type === "title") {
-    const txt = safePlainTextFromTitleArray(prop.title);
+    const txt = safePlainTextFromTitleArray(prop.title || []);
     return txt ? [txt] : [];
   }
 
-  // 2) rich_text
+  // rich_text
   if (type === "rich_text") {
     const txt = (prop.rich_text || []).map(t => t.plain_text || "").join("").trim();
     return txt ? [txt] : [];
   }
 
-  // 3) select / multi_select
+  // select / multi_select
   if (type === "select") {
     return prop.select && prop.select.name ? [prop.select.name] : [];
   }
@@ -33,22 +33,59 @@ function extractStringsFromProperty(prop) {
     return (prop.multi_select || []).map(s => s.name).filter(Boolean);
   }
 
-  // 4) status
+  // status
   if (type === "status") {
     return prop.status && prop.status.name ? [prop.status.name] : [];
   }
 
-  // 5) people
+  // people
   if (type === "people") {
-    return (prop.people || []).map(p => p.name || (p.person && p.person.email) || "").filter(Boolean);
+    return (prop.people || []).map(p => p.name || (p.user && p.user.name) || "").filter(Boolean);
   }
 
-  // 6) rollup - array of items (this is the important part)
+  // files -> ignore for filtering (no textual)
+  if (type === "files") return [];
+
+  // checkbox -> return true/false as string (useful for debug)
+  if (type === "checkbox") {
+    return [prop.checkbox === true ? "true" : "false"];
+  }
+
+  // date -> ISO string if present
+  if (type === "date") {
+    return prop.date && prop.date.start ? [prop.date.start] : [];
+  }
+
+  // formula -> handle common formula result types
+  if (type === "formula") {
+    const f = prop.formula || {};
+    // string
+    if (f.type === "string" && typeof f.string === "string") {
+      return f.string ? [f.string] : [];
+    }
+    // number
+    if (f.type === "number" && (f.number !== null && f.number !== undefined)) {
+      return [String(f.number)];
+    }
+    // boolean
+    if (f.type === "checkbox" && (f.checkbox !== null && f.checkbox !== undefined)) {
+      return [f.checkbox ? "true" : "false"];
+    }
+    // date
+    if (f.type === "date" && f.date && f.date.start) {
+      return [f.date.start];
+    }
+    // fallback: sometimes formula returns rich_text-like object
+    if (f.string) return [f.string];
+    return [];
+  }
+
+  // rollup (important)
   if (type === "rollup") {
     const arr = prop.rollup?.array || [];
     const out = [];
     for (const item of arr) {
-      // item often has structure like { type: 'title', title: [...] } or 'rich_text' or 'select'
+      if (!item) continue;
       if (item.type === "title" && item.title) {
         out.push(safePlainTextFromTitleArray(item.title));
       } else if (item.type === "rich_text" && item.rich_text) {
@@ -60,20 +97,19 @@ function extractStringsFromProperty(prop) {
       } else if (item.type === "people" && item.people) {
         out.push(...(item.people || []).map(p => p.name || "").filter(Boolean));
       } else if (item.type === "relation" && item.relation) {
-        // sometimes rollup of relation gives array of relation objects — they only have id, no name
-        // ignore (can't resolve names here without extra queries)
+        // relation items only contain id — skip (can't resolve name without extra fetch)
       } else {
-        // defensive: try any nested text arrays
+        // defensive attempts
         if (item.title) out.push(safePlainTextFromTitleArray(item.title));
         if (item.rich_text) out.push((item.rich_text || []).map(t => t.plain_text || "").join(""));
+        if (typeof item === "string") out.push(item);
       }
     }
     return out.filter(Boolean);
   }
 
-  // 7) relation (can't read names from relation type directly via this property)
+  // relation -> we can't get names here (Notion returns ids); return empty
   if (type === "relation") {
-    // relation gives only ids, so we can't extract names here without additional Notion lookups
     return [];
   }
 
@@ -81,44 +117,62 @@ function extractStringsFromProperty(prop) {
   return [];
 }
 
-export default async function handler(req, res) {
-  if (!DB_ID) {
-    return res.status(500).json({ ok: false, error: "Missing NOTION_DATABASE_ID", clients: [], projects: [], platforms: [], owners: [], statuses: [] });
-  }
-
-  // attempt to fetch pages with Archivado/Hide filters if available, fallback if not
+async function fetchAllPages(databaseId, filter = undefined) {
   let pages = [];
   try {
-    const q = await notion.databases.query({
-      database_id: DB_ID,
-      page_size: 100,
-      filter: {
-        and: [
-          { property: "Archivado", checkbox: { equals: false } },
-          { property: "Hide", checkbox: { equals: false } },
-        ],
-      },
-    });
-    pages = q.results;
+    const opt = { database_id: databaseId, page_size: 100 };
+    if (filter) opt.filter = filter;
+    let q = await notion.databases.query(opt);
+    pages = q.results || [];
     let cursor = q.has_more ? q.next_cursor : null;
     while (cursor) {
-      const n = await notion.databases.query({ database_id: DB_ID, page_size: 100, start_cursor: cursor });
-      pages = pages.concat(n.results);
+      const nextOpt = { database_id: databaseId, page_size: 100, start_cursor: cursor };
+      if (filter) nextOpt.filter = filter;
+      const n = await notion.databases.query(nextOpt);
+      pages = pages.concat(n.results || []);
       cursor = n.has_more ? n.next_cursor : null;
     }
+    return pages;
   } catch (err) {
-    // fallback: try without those two filters
+    throw err;
+  }
+}
+
+export default async function handler(req, res) {
+  if (!DB_ID) return res.status(500).json({ ok: false, error: "Missing NOTION_DATABASE_ID" });
+
+  // 1) retrieve DB schema so we build safe filters
+  let schema;
+  try {
+    schema = await notion.databases.retrieve({ database_id: DB_ID });
+  } catch (err) {
+    return res.status(500).json({ ok: false, error: "Cannot retrieve DB schema: " + err.message });
+  }
+
+  const propNames = Object.keys(schema.properties || {});
+
+  // build safe filter — only include checkbox filters if those props exist
+  const safeAnd = [];
+  if (propNames.includes("Archivado") && schema.properties["Archivado"].type === "checkbox") {
+    safeAnd.push({ property: "Archivado", checkbox: { equals: false } });
+  }
+  if (propNames.includes("Hide") && schema.properties["Hide"].type === "checkbox") {
+    safeAnd.push({ property: "Hide", checkbox: { equals: false } });
+  }
+
+  let pages = [];
+  try {
+    if (safeAnd.length > 0) {
+      pages = await fetchAllPages(DB_ID, { and: safeAnd });
+    } else {
+      pages = await fetchAllPages(DB_ID);
+    }
+  } catch (err) {
+    // fallback try without filter
     try {
-      const q2 = await notion.databases.query({ database_id: DB_ID, page_size: 100 });
-      pages = q2.results;
-      let cursor = q2.has_more ? q2.next_cursor : null;
-      while (cursor) {
-        const n = await notion.databases.query({ database_id: DB_ID, page_size: 100, start_cursor: cursor });
-        pages = pages.concat(n.results);
-        cursor = n.has_more ? n.next_cursor : null;
-      }
+      pages = await fetchAllPages(DB_ID);
     } catch (err2) {
-      return res.status(500).json({ ok: false, error: err2.message, clients: [], projects: [], platforms: [], owners: [], statuses: [] });
+      return res.status(500).json({ ok: false, error: "Query failed: " + err2.message });
     }
   }
 
@@ -129,7 +183,7 @@ export default async function handler(req, res) {
   const ownersMap = new Map();
   const statusesSet = new Set();
 
-  // name candidates for each concept (tries in order)
+  // candidate property names (we'll try these in order)
   const clientProps = ["ClientName", "PostClient", "PostClients", "Client", "Clients"];
   const projectProps = ["ProjectName", "PostProject", "PostProjects", "Project", "Projects"];
   const platformProps = ["Platform", "Plataforma", "Platforms", "PostPlatform", "PostPlatforms", "PlatformName"];
@@ -139,7 +193,7 @@ export default async function handler(req, res) {
   for (const page of pages) {
     const props = page.properties || {};
 
-    // --- CLIENT
+    // CLIENT
     for (const n of clientProps) {
       if (props[n]) {
         const vals = extractStringsFromProperty(props[n]);
@@ -148,7 +202,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- PROJECT
+    // PROJECT
     for (const n of projectProps) {
       if (props[n]) {
         const vals = extractStringsFromProperty(props[n]);
@@ -157,7 +211,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- PLATFORMS
+    // PLATFORM
     for (const n of platformProps) {
       if (props[n]) {
         const vals = extractStringsFromProperty(props[n]);
@@ -166,7 +220,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- OWNERS
+    // OWNER
     for (const n of ownerProps) {
       if (props[n]) {
         const vals = extractStringsFromProperty(props[n]);
@@ -175,7 +229,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // --- STATUS
+    // STATUS
     for (const n of statusProps) {
       if (props[n]) {
         const vals = extractStringsFromProperty(props[n]);
@@ -191,12 +245,25 @@ export default async function handler(req, res) {
   const platforms = Array.from(platformsSet.values()).filter(Boolean).sort((a,b)=>a.localeCompare(b));
   const statuses = Array.from(statusesSet.values()).filter(Boolean).sort((a,b)=>a.localeCompare(b));
 
-  return res.status(200).json({
-    ok: true,
-    clients,
-    projects,
-    platforms,
-    owners,
-    statuses
-  });
+  const out = { ok: true, counts: { pages: pages.length }, clients, projects, platforms, owners, statuses };
+
+  // debug param: return 3 samples of raw pages (with only a few props for investigation)
+  if (req.query && (req.query.debug === "1" || req.query.debug === "true")) {
+    out.debugSample = pages.slice(0,3).map(p => {
+      const small = { id: p.id, props: {} };
+      const interesting = ["PostClient","ClientName","PostProject","ProjectName","PostBrands","Platform","Owner","Status"];
+      for (const k of interesting) {
+        if (p.properties && p.properties[k]) {
+          small.props[k] = p.properties[k];
+        }
+      }
+      return small;
+    });
+    out.schema_properties = Object.keys(schema.properties || {}).reduce((acc,k)=>{
+      acc[k] = { type: schema.properties[k].type };
+      return acc;
+    },{});
+  }
+
+  return res.status(200).json(out);
 }
