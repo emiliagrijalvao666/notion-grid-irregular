@@ -1,17 +1,27 @@
 // /api/schema.js
-import { Client } from "@notionhq/client";
+export const SCHEMA = {
+  POSTS_DB_ID: process.env.NOTION_DATABASE_ID,     // Posts
+  CLIENTS_DB_ID: process.env.NOTION_DB_CLIENTS,    // Clients
+  PROJECTS_DB_ID: process.env.NOTION_DB_PROJECTS,  // Projects
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
-const DB_ID = process.env.NOTION_DATABASE_ID || process.env.NOTION_DB_ID;
+  // Nombres de propiedades en tu DB de Posts (ajusta si difieren)
+  PROPS: {
+    title: 'Name',                 // Título
+    date: 'Publish Date',          // Fecha (date)
+    clients: 'PostClient',         // Relation → Clients
+    projects: 'PostProject',       // Relation → Projects
+    platform: 'Platform',          // Select
+    owners: 'Owner',               // People
+    status: 'Status',              // Status
+    pinned: 'Pinned',              // Checkbox
+    hide: 'Hide',                  // Checkbox (si no existe, se ignora)
+    archived: 'Archivado',         // Checkbox (si no existe, se ignora)
+    // Archivos (files & media):
+    fileA: 'Attachment',
+    fileB: 'Link',
+    fileC: 'Canva Design',
+  },
 
-export default async function handler(req, res) {
-  if (!DB_ID) {
-    return res.status(500).json({ ok: false, error: "Missing DB id" });
-  }
-  try {
-    const db = await notion.databases.retrieve({ database_id: DB_ID });
-    return res.status(200).json({ ok: true, properties: db.properties });
-  } catch (err) {
-    return res.status(500).json({ ok: false, error: err.message });
-  }
-}
+  // En Projects, relación hacia Client
+  PROJECTS_CLIENT_PROP: 'Client',  // Relation (Projects → Clients)
+};
