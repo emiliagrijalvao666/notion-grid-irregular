@@ -9,28 +9,28 @@
 <body>
   <div id="app" class="wrap">
     <div class="toolbar">
-      <button id="btnRefresh" class="btn btn--refresh"><span class="ico-refresh"></span> Refresh</button>
-      <button id="btnClear" class="btn btn--ghost">Clear filters</button>
+      <button id="btnRefresh" class="btn btn--refresh" type="button">Refresh</button>
+      <button id="btnClear" class="btn btn--ghost" type="button">Clear filters</button>
 
       <div class="filters" id="filters">
         <div class="select">
-          <button class="select__btn" id="fClient">All Clients</button>
+          <button class="select__btn" id="fClient" type="button">All Clients</button>
           <div class="select__menu" id="mClient"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fProject">All Projects</button>
+          <button class="select__btn" id="fProject" type="button">All Projects</button>
           <div class="select__menu" id="mProject"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fPlatform">All Platforms</button>
+          <button class="select__btn" id="fPlatform" type="button">All Platforms</button>
           <div class="select__menu" id="mPlatform"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fOwner">All Owners</button>
+          <button class="select__btn" id="fOwner" type="button">All Owners</button>
           <div class="select__menu" id="mOwner"></div>
         </div>
         <div class="select">
-          <button class="select__btn" id="fStatus">All Status</button>
+          <button class="select__btn" id="fStatus" type="button">All Status</button>
           <div class="select__menu" id="mStatus"></div>
         </div>
       </div>
@@ -39,7 +39,7 @@
     <div id="grid" class="grid"></div>
 
     <div class="more">
-      <button id="btnMore" class="btn btn--more">Load more</button>
+      <button id="btnMore" class="btn btn--more" type="button">Load more</button>
     </div>
   </div>
 
@@ -47,13 +47,13 @@
   <div id="modal" class="modal" aria-hidden="true">
     <div class="modal__backdrop" id="modalBackdrop"></div>
     <div class="modal__panel" role="dialog" aria-modal="true">
-      <button class="modal__close" id="modalClose" aria-label="Close">✕</button>
+      <button class="modal__close" id="modalClose" aria-label="Close" type="button">✕</button>
       <div class="viewer">
         <div class="viewer__stage" id="vStage"></div>
         <div class="viewer__nav">
-          <button class="nav prev" id="vPrev" aria-label="Prev">‹</button>
+          <button class="nav prev" id="vPrev" aria-label="Prev" type="button">‹</button>
           <div class="viewer__dots" id="vDots"></div>
-          <button class="nav next" id="vNext" aria-label="Next">›</button>
+          <button class="nav next" id="vNext" aria-label="Next" type="button">›</button>
         </div>
         <div class="viewer__copy" id="vCopy"></div>
       </div>
