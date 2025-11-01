@@ -3,317 +3,314 @@
   <head>
     <meta charset="UTF-8" />
     <title>Posts</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <link rel="stylesheet" href="/styles.css" />
     <style>
       body {
+        background: #f4f4f4;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-          sans-serif;
-        background: #f6f6f6;
+        padding: 0;
       }
-      header {
+      .topbar {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 24px 32px 8px;
+        padding: 28px 28px 0;
       }
-      h1 {
-        margin: 0;
-        font-size: 2.3rem;
-      }
-      .filters {
+      .filters-row {
         display: flex;
-        gap: 12px;
-        padding: 0 32px 16px;
+        gap: 14px;
+        padding: 12px 28px 24px;
       }
       select {
-        background: #fff;
         border: none;
-        border-radius: 9999px;
-        padding: 10px 22px;
-        font-size: 0.9rem;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+        background: #fff;
+        border-radius: 999px;
+        padding: 10px 16px;
+        font-size: 14px;
         outline: none;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.05);
       }
-      button.refresh {
-        background: #fff;
+      .refresh-btn {
+        background: #111;
+        color: #fff;
         border: none;
-        border-radius: 9999px;
-        padding: 10px 18px;
+        border-radius: 999px;
+        padding: 10px 20px;
+        font-size: 14px;
         cursor: pointer;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
-      }
-      .error {
-        background: #fee2e2;
-        color: #b91c1c;
-        margin: 0 32px 16px;
-        padding: 12px 16px;
-        border-radius: 12px;
-        font-size: 0.85rem;
       }
       .grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
         gap: 16px;
-        padding: 0 32px 32px;
+        padding: 0 28px 40px;
       }
       .card {
         background: #fff;
-        border-radius: 18px;
-        overflow: hidden;
+        border-radius: 20px;
         min-height: 180px;
         display: flex;
         flex-direction: column;
-        box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+        justify-content: flex-end;
+        overflow: hidden;
       }
-      .thumb {
-        background: #e2e8f0;
-        height: 140px;
+      .card-thumb {
+        flex: 1;
+        background: #dfe4ea;
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 0.7rem;
-        color: #475569;
+        color: #aaa;
+        font-size: 12px;
       }
-      .thumb img {
-        width: 100%;
-        height: 140px;
-        object-fit: cover;
-        display: block;
-      }
-      .card-body {
+      .card-footer {
         padding: 10px 14px 14px;
       }
-      .title {
+      .card-title {
         font-weight: 600;
-        font-size: 0.9rem;
-        margin-bottom: 4px;
+        font-size: 14px;
       }
-      .meta {
-        font-size: 0.7rem;
-        color: #64748b;
+      .card-date {
+        font-size: 12px;
+        color: #777;
+        margin-top: 4px;
       }
-      @media (max-width: 640px) {
-        header,
-        .filters {
-          flex-wrap: wrap;
-        }
+      .error-box {
+        color: #c0392b;
+        background: rgba(192, 57, 43, 0.12);
+        border: 1px solid rgba(192, 57, 43, 0.25);
+        padding: 10px 16px;
+        border-radius: 14px;
+        margin: 0 28px 18px;
+        font-size: 13px;
       }
     </style>
   </head>
   <body>
-    <header>
-      <h1>Posts</h1>
-      <button class="refresh" id="refreshBtn">Refresh</button>
-    </header>
+    <div class="topbar">
+      <h1 style="margin:0;font-size:34px;">Posts</h1>
+      <button class="refresh-btn" id="refreshBtn">Refresh</button>
+    </div>
 
-    <div class="filters">
-      <select id="clientSelect">
+    <div class="filters-row">
+      <select id="clientsSelect">
         <option value="all">All Clients</option>
       </select>
-
-      <select id="projectSelect">
+      <select id="projectsSelect">
         <option value="all">All Projects</option>
       </select>
-
-      <select id="platformSelect">
+      <select id="platformsSelect">
         <option value="all">All Platforms</option>
       </select>
-
-      <select id="ownerSelect">
+      <select id="ownersSelect">
         <option value="all">All Owners</option>
       </select>
-
-      <select id="statusSelect">
+      <select id="statusesSelect">
         <option value="all">All Status</option>
       </select>
     </div>
 
-    <div id="errorBox" class="error" style="display: none"></div>
+    <div id="errorBox" class="error-box" style="display:none;"></div>
 
     <div class="grid" id="postsGrid">
       <!-- cards -->
     </div>
 
     <script>
-      const clientSelect = document.getElementById("clientSelect");
-      const projectSelect = document.getElementById("projectSelect");
-      const platformSelect = document.getElementById("platformSelect");
-      const ownerSelect = document.getElementById("ownerSelect");
-      const statusSelect = document.getElementById("statusSelect");
+      const clientsSelect = document.getElementById("clientsSelect");
+      const projectsSelect = document.getElementById("projectsSelect");
+      const platformsSelect = document.getElementById("platformsSelect");
+      const ownersSelect = document.getElementById("ownersSelect");
+      const statusesSelect = document.getElementById("statusesSelect");
       const postsGrid = document.getElementById("postsGrid");
       const errorBox = document.getElementById("errorBox");
       const refreshBtn = document.getElementById("refreshBtn");
 
-      // guardamos aquí todos los projects con su clientId
-      let ALL_PROJECTS = [];
+      // estado en memoria
+      let ALL_FILTERS = {
+        clients: [],
+        projects: [],
+        platforms: [],
+        owners: [],
+        statuses: [],
+      };
+
+      let CURRENT_FILTERS = {
+        clientId: "all",
+        projectId: "all",
+        platformId: "all",
+        ownerId: "all",
+        statusId: "all",
+      };
+
+      async function init() {
+        await loadFilters();
+        await loadPosts();
+      }
 
       async function loadFilters() {
         try {
           const resp = await fetch("/api/filters");
           const data = await resp.json();
-
           if (!data.ok) {
-            throw new Error(data.error || "Error al cargar filtros");
+            showError(data.error || "No se pudieron cargar los filtros");
+            return;
           }
+          hideError();
+          ALL_FILTERS = data.filters || ALL_FILTERS;
 
-          // 1) Clients
-          clientSelect.innerHTML = `<option value="all">All Clients</option>`;
-          data.filters.clients.forEach((c) => {
-            const opt = document.createElement("option");
-            opt.value = c.id;
-            opt.textContent = c.name;
-            clientSelect.appendChild(opt);
+          // Clients
+          fillSelect(clientsSelect, ALL_FILTERS.clients, "All Clients");
+
+          // Projects (lista completa; luego filtramos si eligen client)
+          fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", {
+            skipEmptyName: true,
           });
 
-          // 2) Projects (guardamos todo para filtrar por client luego)
-          ALL_PROJECTS = data.filters.projects || [];
-          renderProjectsForClient("all");
+          // Platforms
+          fillSelect(platformsSelect, ALL_FILTERS.platforms, "All Platforms");
 
-          // 3) Platforms
-          platformSelect.innerHTML = `<option value="all">All Platforms</option>`;
-          (data.filters.platforms || []).forEach((p) => {
-            const opt = document.createElement("option");
-            opt.value = p;
-            opt.textContent = p;
-            platformSelect.appendChild(opt);
-          });
+          // Owners
+          fillSelect(ownersSelect, ALL_FILTERS.owners, "All Owners");
 
-          // 4) Owners
-          ownerSelect.innerHTML = `<option value="all">All Owners</option>`;
-          (data.filters.owners || []).forEach((o) => {
-            const opt = document.createElement("option");
-            opt.value = o.id;
-            opt.textContent = o.name;
-            ownerSelect.appendChild(opt);
-          });
-
-          // 5) Status
-          statusSelect.innerHTML = `<option value="all">All Status</option>`;
-          (data.filters.statuses || []).forEach((s) => {
-            const opt = document.createElement("option");
-            opt.value = s;
-            opt.textContent = s;
-            statusSelect.appendChild(opt);
-          });
+          // Status
+          fillSelect(statusesSelect, ALL_FILTERS.statuses, "All Status");
         } catch (err) {
           showError("Error inicial: " + err.message);
         }
       }
 
-      function renderProjectsForClient(clientId) {
-        projectSelect.innerHTML = `<option value="all">All Projects</option>`;
+      function fillSelect(selectEl, items, firstLabel, { skipEmptyName = false } = {}) {
+        // limpiar
+        selectEl.innerHTML = "";
+        const opt = document.createElement("option");
+        opt.value = "all";
+        opt.textContent = firstLabel;
+        selectEl.appendChild(opt);
 
-        let list = ALL_PROJECTS;
-        if (clientId !== "all") {
-          list = ALL_PROJECTS.filter((p) => p.clientId === clientId);
-        }
-
-        list.forEach((p) => {
-          const opt = document.createElement("option");
-          opt.value = p.id;
-          opt.textContent = p.name;
-          projectSelect.appendChild(opt);
+        (items || []).forEach((item) => {
+          if (skipEmptyName && (!item.name || item.name === "Sin nombre")) {
+            return;
+          }
+          const o = document.createElement("option");
+          o.value = item.id;
+          o.textContent = item.name;
+          selectEl.appendChild(o);
         });
       }
 
       async function loadPosts() {
-        hideError();
-        postsGrid.innerHTML = "Cargando...";
-
-        const params = new URLSearchParams();
-        params.set("client", clientSelect.value);
-        params.set("project", projectSelect.value);
-        params.set("platform", platformSelect.value);
-        params.set("owner", ownerSelect.value);
-        params.set("status", statusSelect.value);
-
         try {
-          const resp = await fetch(`/api/grid?${params.toString()}`);
+          postsGrid.innerHTML = "Cargando...";
+          const qs = new URLSearchParams(CURRENT_FILTERS).toString();
+          const resp = await fetch("/api/grid?" + qs);
           const data = await resp.json();
-
           if (!data.ok) {
-            throw new Error(data.error || "Error al cargar posts");
+            showError(data.error || "No se pudieron cargar los posts");
+            postsGrid.innerHTML = "";
+            return;
           }
-
+          hideError();
           renderPosts(data.posts || []);
         } catch (err) {
-          showError(err.message);
+          showError("Error al cargar posts: " + err.message);
           postsGrid.innerHTML = "";
         }
       }
 
       function renderPosts(posts) {
         if (!posts.length) {
-          postsGrid.innerHTML = "<p>No hay posts.</p>";
+          postsGrid.innerHTML = "<p>No posts</p>";
           return;
         }
-
         postsGrid.innerHTML = "";
-
         posts.forEach((post) => {
           const card = document.createElement("div");
           card.className = "card";
 
           const thumb = document.createElement("div");
-          thumb.className = "thumb";
-          if (post.image) {
-            const img = document.createElement("img");
-            img.src = post.image;
-            thumb.appendChild(img);
+          thumb.className = "card-thumb";
+          if (post.attachments && post.attachments.length > 0) {
+            // mostramos solo "image" texto, no cargamos la imagen real para no pesar
+            thumb.textContent = "image";
           } else {
             thumb.textContent = "No image";
           }
 
-          const body = document.createElement("div");
-          body.className = "card-body";
-
+          const footer = document.createElement("div");
+          footer.className = "card-footer";
           const title = document.createElement("div");
-          title.className = "title";
+          title.className = "card-title";
           title.textContent = post.title;
+          const date = document.createElement("div");
+          date.className = "card-date";
+          date.textContent = post.date ? post.date : "";
 
-          const meta = document.createElement("div");
-          meta.className = "meta";
-          const date = post.publishDate ? post.publishDate : "sin fecha";
-          meta.textContent = date;
-
-          body.appendChild(title);
-          body.appendChild(meta);
+          footer.appendChild(title);
+          footer.appendChild(date);
 
           card.appendChild(thumb);
-          card.appendChild(body);
+          card.appendChild(footer);
 
           postsGrid.appendChild(card);
         });
       }
 
+      // Cascada: cuando cambia CLIENT → proyectos se filtran
+      clientsSelect.addEventListener("change", () => {
+        const clientId = clientsSelect.value;
+        CURRENT_FILTERS.clientId = clientId;
+        // rearmar projects
+        if (clientId === "all") {
+          fillSelect(projectsSelect, ALL_FILTERS.projects, "All Projects", { skipEmptyName: true });
+          CURRENT_FILTERS.projectId = "all";
+        } else {
+          const filtered = (ALL_FILTERS.projects || []).filter(
+            (p) => p.client_id === clientId && p.name && p.name !== "Sin nombre"
+          );
+          fillSelect(projectsSelect, filtered, "All Projects", { skipEmptyName: true });
+          CURRENT_FILTERS.projectId = "all";
+        }
+        loadPosts();
+      });
+
+      projectsSelect.addEventListener("change", () => {
+        CURRENT_FILTERS.projectId = projectsSelect.value;
+        loadPosts();
+      });
+
+      platformsSelect.addEventListener("change", () => {
+        CURRENT_FILTERS.platformId = platformsSelect.value;
+        loadPosts();
+      });
+
+      ownersSelect.addEventListener("change", () => {
+        CURRENT_FILTERS.ownerId = ownersSelect.value;
+        loadPosts();
+      });
+
+      statusesSelect.addEventListener("change", () => {
+        CURRENT_FILTERS.statusId = statusesSelect.value;
+        loadPosts();
+      });
+
+      refreshBtn.addEventListener("click", async () => {
+        await loadFilters();
+        await loadPosts();
+      });
+
       function showError(msg) {
         errorBox.style.display = "block";
         errorBox.textContent = msg;
       }
-
       function hideError() {
         errorBox.style.display = "none";
         errorBox.textContent = "";
       }
 
-      // eventos
-      clientSelect.addEventListener("change", () => {
-        // cuando cambias client, cambiamos projects
-        renderProjectsForClient(clientSelect.value);
-        loadPosts();
-      });
-      projectSelect.addEventListener("change", loadPosts);
-      platformSelect.addEventListener("change", loadPosts);
-      ownerSelect.addEventListener("change", loadPosts);
-      statusSelect.addEventListener("change", loadPosts);
-      refreshBtn.addEventListener("click", loadPosts);
-
-      // init
-      (async () => {
-        await loadFilters();
-        await loadPosts();
-      })();
+      init();
     </script>
   </body>
 </html>
