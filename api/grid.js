@@ -1,104 +1,68 @@
-import { Client } from "@notionhq/client";
-
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
-
-// Helper to detect file type from url/name
-const isVideoUrl = (u='') => /\.mp4($|\?)/i.test(u) || /\.mov($|\?)/i.test(u) || /\.webm($|\?)/i.test(u);
+// /api/grid.js
+import { notion, getDbMeta, resolveProps, hasProp, pickProp } from './_notion.js';
+import { SCHEMA } from './schema.js';
 
 export default async function handler(req, res){
   try{
-    const { NOTION_TOKEN, NOTION_DATABASE_ID } = process.env;
-    if(!NOTION_TOKEN || !NOTION_DATABASE_ID) return res.status(200).json({ ok:false, error:"Missing NOTION_TOKEN or NOTION_DATABASE_ID" });
+    if(req.method!=='GET') return res.status(405).json({ ok:false, error:'Method not allowed' });
+
+    const dbId = SCHEMA.POSTS_DB_ID;
+    if(!process.env.NOTION_TOKEN || !dbId)
+      return res.status(400).json({ ok:false, error:'Missing NOTION_TOKEN or NOTION_DATABASE_ID' });
+
+    const meta = await getDbMeta(dbId);
+    const P = resolveProps(meta); // ← propiedades efectivas (Client, Project name, etc.)
 
     const {
-      pageSize = 12, cursor,
-      client: clients = [], project: projects = [],
-      platform: platforms = [], owner: owners = [],
-      status
+      pageSize='12', cursor,
+      client:clientIds, project:projectIds, platform:platforms,
+      owner:ownerIds, status:statuses
     } = req.query;
 
-    const and = [];
+    const AND = [];
+    if(P.hide)     AND.push({ property:P.hide, checkbox:{ equals:false } });
+    if(P.archived) AND.push({ property:P.archived, checkbox:{ equals:false } });
 
-    // Exclusions
-    if (hasProp(NOTION_DATABASE_ID, 'Hide')) and.push({ property:'Hide', checkbox:{ equals:false }});
+    const arr = v => v ? (Array.isArray(v)?v:[v]) : [];
 
-    // If there's a Draft checkbox, exclude; otherwise if Status has "Draft", exclude
-    // We'll try both defensively:
-    and.push({ or: [
-      { property:'Draft', checkbox:{ equals:false }},
-      { property:'Draft', checkbox:{ is_empty:true }},
-      { and:[ { property:'Status', status:{ does_not_equal:'Draft' }} ] }
-    ]});
+    if(P.clients && arr(clientIds).length)
+      AND.push({ or: arr(clientIds).map(id=>({ property:P.clients, relation:{ contains:id } })) });
 
-    // Multi filters
-    if (arr(clients).length)  and.push({ or: arr(clients).map(id => ({ property:'PostClient',  relation:{ contains:id }})) });
-    if (arr(projects).length) and.push({ or: arr(projects).map(id => ({ property:'PostProject', relation:{ contains:id }})) });
-    if (arr(platforms).length)and.push({ or: arr(platforms).map(n  => ({ property:'Platform',   multi_select:{ contains:n }})) });
-    if (arr(owners).length)   and.push({ or: arr(owners).map(id   => ({ property:'Owner',      people:{ contains:id }})) });
+    if(P.projects && arr(projectIds).length)
+      AND.push({ or: arr(projectIds).map(id=>({ property:P.projects, relation:{ contains:id } })) });
 
-    // Single
-    if (status) and.push({ property:'Status', status:{ equals: Array.isArray(status)?status[0]:status }});
+    if(P.platform && arr(platforms).length)
+      AND.push({ or: arr(platforms).map(v=>({ property:P.platform, select:{ equals:v } })) });
 
-    const filter = and.length ? { and } : undefined;
+    if(P.owners && arr(ownerIds).length)
+      AND.push({ or: arr(ownerIds).map(id=>({ property:P.owners, people:{ contains:id } })) }); // UUID
 
-    const query = {
-      database_id: NOTION_DATABASE_ID,
-      filter,
-      sorts: [
-        { property:'Publish Date', direction:'descending' },
-        { timestamp:'created_time', direction:'descending' }
-      ],
+    if(P.status && arr(statuses).length)
+      AND.push({ or: arr(statuses).map(v=>({ property:P.status, status:{ equals:v } })) });
+
+    const sorts = [];
+    if(P.pinned) sorts.push({ property:P.pinned, direction:'descending' });
+    if(P.date)   sorts.push({ property:P.date,   direction:'descending' });
+
+    const q = await notion.databases.query({
+      database_id: dbId,
       page_size: Number(pageSize),
-      start_cursor: cursor || undefined
-    };
-
-    const resp = await notion.databases.query(query);
-
-    const posts = resp.results.map(page => {
-      const p = page.properties || {};
-
-      // Collect media from the three properties (files & media)
-      const media = []
-        .concat(readFiles(p['Attachment']))
-        .concat(readFiles(p['Link']))
-        .concat(readFiles(p['Canva Design']));
-
-      const out = {
-        id: page.id,
-        title: readTitle(p['Name']) || 'No title',
-        date: p['Publish Date']?.date?.start || null,
-        pinned: !!p['Pinned']?.checkbox,
-        media: media,
-        copy: readPlain(p['Copy'])
-      };
-      return out;
+      start_cursor: cursor || undefined,
+      filter: AND.length ? { and: AND } : undefined,
+      sorts: sorts.length ? sorts : undefined
     });
 
-    res.status(200).json({
-      ok:true,
-      next_cursor: resp.has_more ? resp.next_cursor : null,
-      posts
+    const posts = q.results.map(pg=>{
+      const title = P.title ? pickProp.title(pg, P.title) : 'Untitled';
+      const date  = P.date  ? pickProp.date(pg, P.date)   : null;
+      const pinned = P.pinned ? pickProp.checkbox(pg, P.pinned) : false;
+      const media = pickProp.filesAll(pg, P.files||[]);
+      return { id:pg.id, title, date, pinned, media };
     });
+
+    res.status(200).json({ ok:true, posts, next_cursor: q.has_more ? q.next_cursor : null });
   }catch(err){
-    res.status(200).json({ ok:false, error: err.body?.message || err.message || String(err) });
+    console.error(err);
+    res.status(500).json({ ok:false, error:String(err?.message||err) });
   }
 }
-
-// ---------- helpers ----------
-function arr(v){ return Array.isArray(v) ? v : (v ? [v] : []); }
-
-function readFiles(prop){
-  const out = [];
-  const items = prop?.files || [];
-  items.forEach(f=>{
-    const url = f.type==='external' ? f.external?.url : f.file?.url;
-    if(!url) return;
-    out.push({ type: isVideoUrl(url) ? 'video' : 'image', url });
-  });
-  return out;
-}
-function readTitle(prop){ return (prop?.title||[]).map(t=>t.plain_text).join('').trim(); }
-function readPlain(prop){ return (prop?.rich_text||[]).map(t=>t.plain_text).join('').trim(); }
-
-// Optional: shallow check for property existence by name (best effort)
-async function hasProp(){ return true; } // keep true; we handle Draft/Hide defensively
