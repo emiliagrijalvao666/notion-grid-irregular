@@ -38,6 +38,7 @@ const els = {
 const state = {
   filtersData: null,
   selected: { clients:[], projects:[], platforms:[], owners:[], statuses:[] },
+  locked:   { clients:false, projects:false, platforms:false, owners:false, statuses:false },
   cursor: null,
   posts: [],
   loading: false,
@@ -63,6 +64,10 @@ const MONTHS = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov
 init();
 
 async function init(){
+  // 1) leemos params primero
+  initFromQuery();
+
+  // 2) UI
   wireMenus();
   wireModal();
 
@@ -75,6 +80,59 @@ async function init(){
 
   await loadFilters();
   await refresh(true);
+}
+
+/* =========================
+   Query params → estado inicial
+   ========================= */
+
+function initFromQuery(){
+  const q = new URLSearchParams(window.location.search);
+
+  // client por id o por nombre
+  const clientId   = q.get('client') || q.get('clientId');
+  const clientName = q.get('clientName');
+
+  if (clientId){
+    state.selected.clients = [clientId];
+    state.locked.clients = true;
+  } else if (clientName){
+    // todavía no tenemos los nombres, así que guardamos el texto y lo resolveremos en loadFilters
+    state.selected.clients = [clientName];
+    state.locked.clients = true;
+  }
+
+  // project
+  const projectId   = q.get('project') || q.get('projectId');
+  const projectName = q.get('projectName');
+  if (projectId){
+    state.selected.projects = [projectId];
+    state.locked.projects = true;
+  } else if (projectName){
+    state.selected.projects = [projectName];
+    state.locked.projects = true;
+  }
+
+  // platform
+  const platform = q.get('platform');
+  if (platform){
+    state.selected.platforms = [platform];
+    state.locked.platforms = true;
+  }
+
+  // owner
+  const owner = q.get('owner');
+  if (owner){
+    state.selected.owners = [owner];
+    state.locked.owners = true;
+  }
+
+  // status
+  const status = q.get('status');
+  if (status){
+    state.selected.statuses = [status];
+    state.locked.statuses = true;
+  }
 }
 
 /* =========================
@@ -107,23 +165,41 @@ async function loadFilters(){
 
     state.filtersData = normalizeFilters(json);
 
-    // Nota: owners -> value = id (para que Notion acepte people.contains)
-    renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true,  searchable:true});
-    renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true,  searchable:true});
-    renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true,  searchable:true});
-    renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id, {multi:true,  searchable:true, initials:true});
-    renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name, {multi:false, searchable:true});
+    // resolver nombres que llegaron por query
+    resolveQuerySelectionsAgainstFilters();
 
-    setBtnText(els.fClient, "All Clients");
-    setBtnText(els.fProject, "All Projects");
-    setBtnText(els.fPlatform, "All Platforms");
-    setOwnerBtnLabel();
-    setBtnText(els.fStatus, "All Status");
+    renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true,  searchable:true, locked:state.locked.clients});
+    renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true,  searchable:true, locked:state.locked.projects});
+    renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true,  searchable:true, locked:state.locked.platforms});
+    renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id, {multi:true,  searchable:true, initials:true, locked:state.locked.owners});
+    renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name, {multi:false, searchable:true, locked:state.locked.statuses});
+
+    updateButtonsText();
   }catch(err){
     toast('No se pudieron cargar los filtros.');
     state.filtersData = {clients:[],projects:[],platforms:[],owners:[],statuses:[]};
   }finally{
     showOverlay(false);
+  }
+}
+
+function resolveQuerySelectionsAgainstFilters(){
+  const fd = state.filtersData;
+  if (!fd) return;
+
+  // si el query vino con texto (nombre) lo volvemos ID real
+  if (state.locked.clients && state.selected.clients.length===1){
+    const v = state.selected.clients[0];
+    const byId   = fd.clients.find(c => c.id===v);
+    const byName = fd.clients.find(c => c.name===v);
+    if (byName) state.selected.clients = [byName.id];
+  }
+
+  if (state.locked.projects && state.selected.projects.length===1){
+    const v = state.selected.projects[0];
+    const byId   = fd.projects.find(c => c.id===v);
+    const byName = fd.projects.find(c => c.name===v);
+    if (byName) state.selected.projects = [byName.id];
   }
 }
 
@@ -136,7 +212,7 @@ function normalizeFilters(json){
   return { clients, projects, platforms, owners, statuses };
 }
 
-function renderMenu(container, list, key, labelFn, valueFn, opts={multi:true, searchable:true, initials:false}){
+function renderMenu(container, list, key, labelFn, valueFn, opts={multi:true, searchable:true, initials:false, locked:false}){
   container.innerHTML = '';
 
   // search box
@@ -149,7 +225,10 @@ function renderMenu(container, list, key, labelFn, valueFn, opts={multi:true, se
     clear.type='button'; clear.textContent='✕'; clear.title='Clear';
     sb.appendChild(input); sb.appendChild(clear);
     container.appendChild(sb);
-    clear.addEventListener('click', ()=>{ input.value=''; renderList(''); input.focus(); });
+    clear.addEventListener('click', ()=>{
+      if (opts.locked) return;
+      input.value=''; renderList(''); input.focus();
+    });
     input.addEventListener('input', ()=> renderList(input.value));
   }
 
@@ -186,6 +265,7 @@ function renderMenu(container, list, key, labelFn, valueFn, opts={multi:true, se
 
         div.addEventListener('click', (e)=>{
           e.stopPropagation();
+          if (opts.locked) return; // ← si vino por URL, no dejar tocar
           if (key==='statuses'){ // single-select
             state.selected.statuses = [val];
             closeAllSelects();
@@ -234,19 +314,21 @@ function filterProjectsForClients(){
   if (clients.length){
     show = all.filter(p => p.clientIds && p.clientIds.some(id => clients.includes(id)));
   }
-  renderMenu(els.mProject, show, 'projects', it=>it.name, it=>it.id, {multi:true, searchable:true});
-  setBtnText(els.fProject, 'All Projects');
-  state.selected.projects = [];
+  renderMenu(els.mProject, show, 'projects', it=>it.name, it=>it.id, {multi:true, searchable:true, locked:state.locked.projects});
+  if (!state.locked.projects){
+    setBtnText(els.fProject, 'All Projects');
+    state.selected.projects = [];
+  }
 }
 
 function updateButtonsText(){
-  setBtnText(els.fClient,   state.selected.clients.length   ? `${state.selected.clients.length} selected`   : 'All Clients');
-  setBtnText(els.fProject,  state.selected.projects.length  ? `${state.selected.projects.length} selected`  : 'All Projects');
-  setBtnText(els.fPlatform, state.selected.platforms.length ? `${state.selected.platforms.length} selected` : 'All Platforms');
+  setBtnText(els.fClient,   state.selected.clients.length   ? labelForSelected('clients')   : 'All Clients', state.locked.clients);
+  setBtnText(els.fProject,  state.selected.projects.length  ? labelForSelected('projects')  : 'All Projects', state.locked.projects);
+  setBtnText(els.fPlatform, state.selected.platforms.length ? labelForSelected('platforms') : 'All Platforms', state.locked.platforms);
   setOwnerBtnLabel();
-  setBtnText(els.fStatus,   state.selected.statuses.length  ? state.selected.statuses[0] : 'All Status');
+  setBtnText(els.fStatus,   state.selected.statuses.length  ? state.selected.statuses[0] : 'All Status', state.locked.statuses);
 
-  const active = state.selected.clients.length + state.selected.projects.length + state.selected.platforms.length + state.selected.owners.length + state.selected.statuses.length;
+  const active = countActiveFilters();
   if (els.clear) els.clear.disabled = active===0;
   if (els.badgeCount){
     els.badgeCount.textContent = String(active);
@@ -254,21 +336,37 @@ function updateButtonsText(){
   }
 }
 
+function labelForSelected(key){
+  const n = state.selected[key].length;
+  return n===1 ? '1 selected' : `${n} selected`;
+}
+
+function countActiveFilters(){
+  let total = 0;
+  for (const k of ['clients','projects','platforms','owners','statuses']){
+    if (state.selected[k].length) total++;
+  }
+  return total;
+}
+
 function setOwnerBtnLabel(){
   if (!state.selected.owners.length){
-    setBtnText(els.fOwner,'All Owners'); els.fOwner.title='All Owners'; return;
+    setBtnText(els.fOwner,'All Owners', state.locked.owners); els.fOwner.title='All Owners'; return;
   }
-  // map IDs -> names para la etiqueta
   const names = state.selected.owners
     .map(id => (state.filtersData.owners.find(o=>o.id===id)?.name) || 'Unknown');
   const chosen = names.slice(0,2);
   const more   = names.length - chosen.length;
   const label  = more>0 ? `${chosen.join(', ')} +${more}` : chosen.join(', ');
-  setBtnText(els.fOwner, label);
+  setBtnText(els.fOwner, label, state.locked.owners);
   els.fOwner.title = names.join(', ');
 }
 
-function setBtnText(btn, txt){ if(btn) btn.textContent = txt; }
+function setBtnText(btn, txt, locked=false){
+  if(!btn) return;
+  btn.textContent = txt;
+  btn.classList.toggle('is-locked', locked);
+}
 
 function closeAllSelects(){
   document.querySelectorAll('.select').forEach(s=>{
@@ -278,28 +376,15 @@ function closeAllSelects(){
 }
 
 function clearFilters(){
-  // 1) limpiar estado
-  state.selected = { clients:[], projects:[], platforms:[], owners:[], statuses:[] };
+  // solo limpiamos los que NO están locked
+  if (!state.locked.clients)   state.selected.clients = [];
+  if (!state.locked.projects)  state.selected.projects = [];
+  if (!state.locked.platforms) state.selected.platforms = [];
+  if (!state.locked.owners)    state.selected.owners = [];
+  if (!state.locked.statuses)  state.selected.statuses = [];
 
-  // 2) re-pintar TODOS los menús desde la data base
-  renderMenu(els.mClient,   state.filtersData.clients,   'clients',   it=>it.name, it=>it.id, {multi:true, searchable:true});
-  renderMenu(els.mProject,  state.filtersData.projects,  'projects',  it=>it.name, it=>it.id, {multi:true, searchable:true});
-  renderMenu(els.mPlatform, state.filtersData.platforms, 'platforms', it=>it,      it=>it,    {multi:true, searchable:true});
-  renderMenu(els.mOwner,    state.filtersData.owners,    'owners',    it=>it.name, it=>it.id, {multi:true, searchable:true, initials:true});
-  renderMenu(els.mStatus,   state.filtersData.statuses,  'statuses',  it=>it.name, it=>it.name, {multi:false, searchable:true});
-
-  // 3) resetear labels
-  setBtnText(els.fClient,   'All Clients');
-  setBtnText(els.fProject,  'All Projects');
-  setBtnText(els.fPlatform, 'All Platforms');
-  setBtnText(els.fStatus,   'All Status');
-  setOwnerBtnLabel();
-
-  // 4) UI limpia
-  closeAllSelects();
   updateButtonsText();
-
-  // 5) refrescar grid
+  renderMenu(els.mProject, state.filtersData.projects, 'projects', it=>it.name, it=>it.id, {multi:true, searchable:true, locked:state.locked.projects});
   scheduleRefresh();
 }
 
@@ -335,8 +420,8 @@ async function fetchMore(replace){
     state.selected.clients.forEach(v=>params.append('client', v));
     state.selected.projects.forEach(v=>params.append('project', v));
     state.selected.platforms.forEach(v=>params.append('platform', v));
-    state.selected.owners.forEach(v=>params.append('owner', v));     // IDs
-    state.selected.statuses.forEach(v=>params.append('status', v));  // single
+    state.selected.owners.forEach(v=>params.append('owner', v));
+    state.selected.statuses.forEach(v=>params.append('status', v));
 
     const resp = await fetch(`/api/grid?${params.toString()}`);
     const json = await resp.json();
@@ -511,6 +596,8 @@ function moveModal(step){
 
 function renderModal(){
   const a = state.modal.assets[state.modal.index];
+
+  // si es drive link, podríamos forzar embed, pero lo dejamos simple
   els.vStage.innerHTML = (a.type==='video')
     ? `<video preload="metadata" controls playsinline src="${escapeHtml(a.url)}" style="max-width:100%;max-height:60vh;object-fit:contain"></video>`
     : `<img alt="" src="${escapeHtml(a.url)}" style="max-width:100%;max-height:60vh;object-fit:contain" />`;
