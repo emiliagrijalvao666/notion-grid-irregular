@@ -5,8 +5,8 @@ const CONTENT_DB_ID   = process.env.NOTION_DB_ID || process.env.CONTENT_DB_ID ||
 const PAGE_SIZE_MAX   = 50;
 
 // candidatos de propiedades en el Content DB
-const TITLE_CANDS     = ['Name','Título','Title','Post','Post title'];
-const DATE_CANDS      = ['Date','Fecha','Publish date','Pub date'];
+const TITLE_CANDS     = ['Post','Name','Título','Title','Post title'];
+const DATE_CANDS      = ['Publish Date','Date','Fecha','Pub date'];
 const OWNER_CANDS     = ['Owner','Owners','Responsable','Asignado a'];
 const STATUS_CANDS    = ['Status','Estado','State'];
 const PLATFORM_CANDS  = ['Platform','Platforms'];
@@ -14,6 +14,8 @@ const PINNED_CANDS    = ['Pinned','Pin','Destacado'];
 const HIDE_CANDS      = ['Hide','Hidden','Oculto','Archive','Archived'];
 const COPY_CANDS      = ['Copy','Caption','Description','Descripción'];
 const MEDIA_CANDS     = ['Media','Files','File','Attachment','Attachments','Imagen','Imágenes','Video'];
+// NUEVO: columnas que son links (Drive, Canva, etc.)
+const URL_CANDS       = ['Link','Canva','URL','Video link','Drive','Embed'];
 const REL_CLIENTS_CANDS  = ['Client','Clients','Brand','Brands','PostClient'];
 const REL_PROJECTS_CANDS = ['Project','Projects','PostProject'];
 
@@ -33,37 +35,30 @@ export default async function handler(req, res){
       statuses:  asArray(qs.status),  // single
     };
 
+    // leemos el schema real
     const meta = await notion.databases.retrieve({ database_id: CONTENT_DB_ID });
 
-    const titleKey    = firstExisting(meta, TITLE_CANDS, 'title');
-    const dateKey     = firstExisting(meta, DATE_CANDS, 'date');
-    const ownerKey    = firstExisting(meta, OWNER_CANDS, 'people');
-
-    // detectar status como 'status' o 'select'
-    const statusInfo  = firstExistingWithType(meta, STATUS_CANDS, ['status','select']);
-    const statusKey   = statusInfo?.key;
-    const statusType  = statusInfo?.type;
-
-    const platformKey = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
-    const pinnedKey   = firstExisting(meta, PINNED_CANDS, 'checkbox');
-    const hideKey     = firstExisting(meta, HIDE_CANDS, 'checkbox');
-    const copyKey     = firstExisting(meta, COPY_CANDS); // text/rich_text
-    const mediaKey    = firstExisting(meta, MEDIA_CANDS, 'files');
+    const titleKey      = firstExisting(meta, TITLE_CANDS, 'title');
+    const dateKey       = firstExisting(meta, DATE_CANDS, 'date');
+    const ownerKey      = firstExisting(meta, OWNER_CANDS, 'people');
+    const statusKey     = firstExisting(meta, STATUS_CANDS, 'select');
+    const platformKey   = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
+    const pinnedKey     = firstExisting(meta, PINNED_CANDS, 'checkbox');
+    const hideKey       = firstExisting(meta, HIDE_CANDS, 'checkbox');
+    const copyKey       = firstExisting(meta, COPY_CANDS);
+    const mediaKey      = firstExisting(meta, MEDIA_CANDS, 'files');
+    const urlKey        = firstExisting(meta, URL_CANDS);
     const relClientKey  = firstExisting(meta, REL_CLIENTS_CANDS, 'relation');
     const relProjectKey = firstExisting(meta, REL_PROJECTS_CANDS, 'relation');
 
-    // ---- Notion filter ----
+    // ---- Notion filter (solo lo que Notion soporta bien) ----
     const and = [];
 
     if (hideKey){
       and.push({ property: hideKey, checkbox: { equals: false }});
     }
     if (statusKey && sel.statuses.length===1){
-      if (statusType === 'status'){
-        and.push({ property: statusKey, status: { equals: sel.statuses[0] }});
-      } else {
-        and.push({ property: statusKey, select: { equals: sel.statuses[0] }});
-      }
+      and.push({ property: statusKey, select: { equals: sel.statuses[0] }});
     }
     if (platformKey && sel.platforms.length>0){
       and.push({
@@ -99,7 +94,15 @@ export default async function handler(req, res){
 
     // ---- map posts ----
     const posts = resp.results.map(page => mapPageToPost(page, {
-      titleKey, dateKey, ownerKey, statusKey, platformKey, pinnedKey, copyKey, mediaKey
+      titleKey,
+      dateKey,
+      ownerKey,
+      statusKey,
+      platformKey,
+      pinnedKey,
+      copyKey,
+      mediaKey,
+      urlKey
     }));
 
     return res.json({ ok:true, posts, next_cursor: resp.has_more ? resp.next_cursor : null });
@@ -127,33 +130,34 @@ function firstExisting(meta, candidates, type){
   return undefined;
 }
 
-function firstExistingWithType(meta, candidates, typesArr){
-  for(const key of candidates){
-    const prop = meta.properties[key];
-    if(!prop) continue;
-    if(typesArr.includes(prop.type)) return { key, type: prop.type };
-  }
-  return null;
-}
-
 function buildSorts(meta, dateKey){
   if (dateKey){
     return [{ property: dateKey, direction: 'descending' }];
   }
-  // fallback
   return [{ timestamp: 'created_time', direction: 'descending' }];
 }
 
 function mapPageToPost(page, keys){
-  const { titleKey, dateKey, ownerKey, platformKey, pinnedKey, copyKey, mediaKey } = keys;
+  const {
+    titleKey,
+    dateKey,
+    ownerKey,
+    platformKey,
+    pinnedKey,
+    copyKey,
+    mediaKey,
+    urlKey
+  } = keys;
 
-  const title = readTitle(page.properties[titleKey]);
-  const date  = readDate(page.properties[dateKey]);
-  const ownerNames = readOwners(page.properties[ownerKey]);
-  const platforms  = readMulti(page.properties[platformKey]);
-  const pinned     = readCheckbox(page.properties[pinnedKey]);
-  const copy       = readText(page.properties[copyKey]);
-  const assets     = readFiles(page.properties[mediaKey]);
+  const title       = readTitle(page.properties[titleKey]);
+  const date        = readDate(page.properties[dateKey]);
+  const ownerNames  = readOwners(page.properties[ownerKey]);
+  const platforms   = readMulti(page.properties[platformKey]);
+  const pinned      = readCheckbox(page.properties[pinnedKey]);
+  const copy        = readText(page.properties[copyKey]);
+  const fileAssets  = readFiles(page.properties[mediaKey]);
+  const urlAssets   = readUrls(page.properties[urlKey]);
+  const assets      = [...fileAssets, ...urlAssets];
 
   return {
     id: page.id,
@@ -203,9 +207,33 @@ function readFiles(prop){
     return { type: guessType(url), url };
   });
 }
+
+// lee columnas tipo url / rich_text que tengan un link
+function readUrls(prop){
+  if (!prop) return [];
+  let urls = [];
+
+  if (prop.type === 'url' && prop.url){
+    urls.push(prop.url);
+  } else if (prop.type === 'rich_text'){
+    const txt = (prop.rich_text||[]).map(t=>t.plain_text).join(' ');
+    const m = txt.match(/https?:\/\/\S+/g);
+    if (m) urls = urls.concat(m);
+  }
+
+  return urls.map(u => ({ type: guessType(u), url: u }));
+}
+
 function guessType(url=''){
   const u = url.toLowerCase();
-  if (u.includes('.mp4') || u.includes('video/mp4')) return 'video';
-  if (u.includes('.mov') || u.includes('video/quicktime')) return 'video';
+
+  // drive
+  if (u.includes('drive.google.com')) return 'video';
+  // canva
+  if (u.includes('canva.com')) return 'image';
+  // video comunes
+  if (u.endsWith('.mp4') || u.includes('video/mp4')) return 'video';
+  if (u.endsWith('.mov') || u.includes('video/quicktime')) return 'video';
+
   return 'image';
 }
