@@ -73,19 +73,27 @@ html,body{margin:0;background:#fff;color:var(--ink);font:14px/1.4 system-ui,-app
   display:none;
 }
 
-/* botón engranaje, estilo simple como los demás */
+/* -------- Engranaje (mostrar/ocultar filtros) -------- */
+
 .btn--gear{
-  border:0;
-  border-radius:999px;
-  padding:6px 8px;
-  margin-right:8px;
-  background:var(--chip);
-  color:var(--chip-ink);
+  background:#fff;
+  color:#111;
+  border-radius:20px;
+  border:1px solid #2563eb; /* azul tipo Notion */
+  padding:8px 12px;          /* misma altura que Refresh */
+  margin-left:8px;           /* pegado a Refresh pero con respiro */
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  cursor:pointer;
 }
+
 .btn--gear svg{
+  width:16px;
+  height:16px;
   display:block;
+}
+
+/* cuando se ocultan los filtros */
+.filters--hidden{
+  display:none;
 }
