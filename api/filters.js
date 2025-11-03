@@ -1,35 +1,55 @@
 // /api/filters.js
-import { CONTENT_DB_ID, contentSchema } from './schema.js';
-import { queryDatabase, getProp } from './_notion.js';
+import {
+  CONTENT_DB_ID,
+  CLIENTS_DB_ID,
+  PROJECTS_DB_ID,
+  contentSchema,
+} from './schema.js';
+
+import {
+  queryDatabase,
+  getProp,
+  pagesToMap,
+} from './_notion.js';
 
 export default async function handler(req, res) {
   try {
-    const pages = await queryDatabase(CONTENT_DB_ID, {
-      page_size: 100,
-    });
+    // leemos las 3 bases
+    const [contentPages, clientPages, projectPages] = await Promise.all([
+      queryDatabase(CONTENT_DB_ID, {}),
+      queryDatabase(CLIENTS_DB_ID, {}),
+      queryDatabase(PROJECTS_DB_ID, {}),
+    ]);
 
-    const clients = new Set();
-    const projects = new Set();
+    const clientMap  = pagesToMap(clientPages);
+    const projectMap = pagesToMap(projectPages);
+
+    const clients   = new Set();
+    const projects  = new Set();
     const platforms = new Set();
-    const owners = new Set();
-    const statuses = new Set();
+    const owners    = new Set();
+    const statuses  = new Set();
 
-    for (const p of pages) {
-      // client
-      const c = getProp(p, contentSchema.clientRel);
-      if (Array.isArray(c) && c.length === 0) {
-        // nada
-      } else if (typeof c === 'string') {
-        clients.add(c);
+    for (const p of contentPages) {
+      // CLIENTS
+      const relClients = getProp(p, contentSchema.clientRel);
+      if (Array.isArray(relClients)) {
+        relClients.forEach(id => {
+          const name = clientMap[id];
+          if (name) clients.add(name);
+        });
       }
 
-      // project (relación)
-      const proj = getProp(p, contentSchema.projectRel);
-      if (typeof proj === 'string' && proj) {
-        projects.add(proj);
+      // PROJECTS
+      const relProjects = getProp(p, contentSchema.projectRel);
+      if (Array.isArray(relProjects)) {
+        relProjects.forEach(id => {
+          const name = projectMap[id];
+          if (name) projects.add(name);
+        });
       }
 
-      // plataforma
+      // PLATFORM
       const pls = getProp(p, contentSchema.platforms);
       if (Array.isArray(pls)) {
         pls.forEach(pl => platforms.add(pl));
@@ -37,28 +57,24 @@ export default async function handler(req, res) {
         platforms.add(pls);
       }
 
-      // owner
-      const o = getProp(p, contentSchema.owners);
-      if (typeof o === 'string' && o) {
-        owners.add(o);
-      }
+      // OWNER
+      const ow = getProp(p, contentSchema.owners);
+      if (typeof ow === 'string' && ow) owners.add(ow);
 
-      // status
+      // STATUS
       const st = getProp(p, contentSchema.status);
-      if (typeof st === 'string' && st) {
-        statuses.add(st);
-      }
+      if (typeof st === 'string' && st) statuses.add(st);
     }
 
     res.status(200).json({
-      clients: Array.from(clients).sort(),
-      projects: Array.from(projects).sort(),
+      clients:   Array.from(clients).sort(),
+      projects:  Array.from(projects).sort(),
       platforms: Array.from(platforms).sort(),
-      owners: Array.from(owners).sort(),
-      statuses: Array.from(statuses).sort(),
+      owners:    Array.from(owners).sort(),
+      statuses:  Array.from(statuses).sort(),
     });
   } catch (err) {
-    console.error(err);
+    console.error('filters error', err);
     res.status(500).json({ error: 'filters failed' });
   }
 }
