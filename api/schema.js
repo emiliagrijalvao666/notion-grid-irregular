@@ -1,29 +1,15 @@
 // /api/schema.js
-
-// compat con tu Vercel: tú tienes NOTION_DB_ID, NOTION_DB_CLIENTS, NOTION_DB_PROJECTS
-// y además tienes NOTION_DATABASE_ID. Dejamos fallback.
-export const CONTENT_DB_ID =
-  process.env.NOTION_DB_ID ||
-  process.env.NOTION_DATABASE_ID;
-
-export const CLIENTS_DB_ID = process.env.NOTION_DB_CLIENTS;
-export const PROJECTS_DB_ID = process.env.NOTION_DB_PROJECTS;
-
-// este es TU esquema real (el que vimos en el dump)
-export const contentSchema = {
+export const schema = {
   title: 'Post',
   date: 'Publish Date',
   owners: 'Owner',
   status: 'Status',
   platforms: 'Platform',
-
-  // aquí declaramos qué props pueden traer media
-  files: ['Attachment', 'Link', 'Canva'],
-
-  // en TU base la relación que sí está llena es "Client" y "Project"
-  clientRel: 'Client',
-  projectRel: 'Project',
+  // Puedes tener las tres; 'Link' y 'Canva' como texto; 'Attachment' como files
+  files: ['Link', 'Canva', 'Attachment'],
+  clientRel: 'Client',   // <- tal como lo usas
+  projectRel: 'Project', // <- tal como lo usas
 };
-
-// para paginaciones pequeñas
-export const PAGE_SIZE = 200;
+export default function handler(req, res) {
+  res.json({ ok: true, schema });
+}
