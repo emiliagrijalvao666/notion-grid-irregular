@@ -33,3 +33,13 @@
        mediaEl = `<img class="card__media" alt="" src="${escapeHtml(first.url)}" />`;
      }
    }
+function driveIdFromUrl(u='') {
+  try {
+    const s = String(u);
+    // admite .../file/d/<ID>/preview o /view
+    if (s.includes('/file/d/')) return s.split('/file/d/')[1].split('/')[0];
+    // fallback: si someone pegó el id suelto accidentalmente
+    if (/^[A-Za-z0-9_-]{20,}$/.test(s)) return s;
+  } catch {}
+  return '';
+}
