@@ -1,45 +1,40 @@
-   let mediaEl = `<div class="placeholder">No content</div>`;
-   if (first) {
--    if (isVideo) {
-+    if (isVideo) {
-       mediaEl = `<video class="card__media" preload="metadata" muted playsinline src="${escapeHtml(
-         first.url
-       )}"></video>`;
--    } else if (isExternal) {
--      const label =
--        first.provider === 'canva'
--          ? 'Canva'
--          : first.provider === 'drive'
--          ? 'Drive'
--          : 'Link';
--      mediaEl = `<div class="card__external">${label}</div>`;
-+    } else if (isExternal) {
-+      // DRIVE: usar thumbnail como portada si es un file preview
-+      if (first.provider === 'drive') {
-+        const id = driveIdFromUrl(first.url);
-+        if (id) {
-+          const thumb = `https://drive.google.com/thumbnail?id=${id}&sz=w1200`;
-+          mediaEl = `<img class="card__media" alt="" src="${escapeHtml(thumb)}" />`;
-+        } else {
-+          mediaEl = `<div class="card__external">Drive</div>`;
-+        }
-+      } else if (first.provider === 'canva') {
-+        // Sin proxy: no hay cover garantizada. Mostramos chip Canva.
-+        mediaEl = `<div class="card__external">Canva</div>`;
-+      } else {
-+        mediaEl = `<div class="card__external">Link</div>`;
-+      }
-     } else {
-       mediaEl = `<img class="card__media" alt="" src="${escapeHtml(first.url)}" />`;
-     }
-   }
-function driveIdFromUrl(u='') {
+function applyInitialURLFilters() {
+  const url = new URL(window.location.href);
+  const pClient   = url.searchParams.getAll('client');
+  const pProject  = url.searchParams.getAll('project');
+  const pOwner    = url.searchParams.getAll('owner');
+  const pPlatform = url.searchParams.getAll('platform');
+  const pStatus   = url.searchParams.getAll('status');
+
+  // guardar locks (lo que llega en URL se considera fijado)
+  state.locked.clients  = [...pClient];
+  state.locked.projects = [...pProject];
+
+  // set inicial seleccionado
+  state.selected.clients   = [...pClient];
+  state.selected.projects  = [...pProject];
+  state.selected.owners    = [...pOwner];
+  state.selected.platforms = [...pPlatform];
+  state.selected.statuses  = [...pStatus];
+
+  updateButtonsText();
+
+  // si hay client, filtra menú de Projects acorde
+  if (pClient.length) filterProjectsForClients();
+
+  // ======= LOCK VISUAL (deshabilita selects si vienen fijados) =======
   try {
-    const s = String(u);
-    // admite .../file/d/<ID>/preview o /view
-    if (s.includes('/file/d/')) return s.split('/file/d/')[1].split('/')[0];
-    // fallback: si someone pegó el id suelto accidentalmente
-    if (/^[A-Za-z0-9_-]{20,}$/.test(s)) return s;
+    if (state.locked.clients.length && els.fClient) {
+      els.fClient.classList.add('is-locked');
+      els.fClient.setAttribute('disabled', 'true');
+      els.fClient.title = 'Locked from portal';
+    }
+    if (state.locked.projects.length && els.fProject) {
+      els.fProject.classList.add('is-locked');
+      els.fProject.setAttribute('disabled', 'true');
+      els.fProject.title = 'Locked from portal';
+    }
+    // cerrar menús si estaban abiertos
+    closeAllSelects();
   } catch {}
-  return '';
 }
