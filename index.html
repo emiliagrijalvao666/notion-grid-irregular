@@ -79,3 +79,29 @@
   <script type="module" src="./index.js?v=9"></script>
 </body>
 </html>
+/* --- Gear toggle --- */
+.btn--gear {
+  background: transparent;
+  border: none;
+  color: #333;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 50%;
+  transition: transform 0.25s ease, background 0.2s;
+}
+.btn--gear:hover {
+  background: #f0f0f0;
+}
+.btn--gear.active svg {
+  transform: rotate(25deg);
+}
+.btn--gear svg {
+  width: 18px;
+  height: 18px;
+  stroke: #333;
+}
+
+/* Ocultar filtros */
+.filters.hidden {
+  display: none;
+}
