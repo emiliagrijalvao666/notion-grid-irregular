@@ -1,16 +1,363 @@
-/* ===== Locks de filtros (Client/Project) ===== */
+/* =========================================
+   IG GRID — styles.css (full file)
+   ========================================= */
+
+/* ------- Reset base ------- */
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+:root{
+  --bg: #0F1115;
+  --panel: #1a1f29;
+  --panel-2: #11151d;
+  --muted: #9aa4b2;
+  --text: #e8eef7;
+  --accent: #111827;
+  --brand: #111827;
+  --chip: #232a36;
+  --chip-hover: #2b3443;
+  --chip-active: #0b1321;
+  --btn: #0b1321;
+  --btn-text: #e8eef7;
+  --btn-ghost: #212838;
+  --btn-ghost-text: #d9e2ee;
+  --outline: #2b3443;
+  --success: #10B981;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --shadow: 0 10px 30px rgba(0,0,0,.45);
+}
+
+html,body{
+  height:100%;
+  background: var(--bg);
+  color: var(--text);
+  margin:0;
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Apple Color Emoji","Segoe UI Emoji";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button{ font: inherit; }
+
+/* ------- Layout ------- */
+.wrap{
+  max-width: 1120px;
+  margin: 28px auto 64px;
+  padding: 0 16px;
+}
+
+/* ------- Toolbar ------- */
+.toolbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  margin-bottom: 14px;
+  gap: 12px;
+}
+.toolbar .left,
+.toolbar .right{ display:flex; align-items:center; gap:10px; }
+
+/* Buttons */
+.btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  height:36px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: var(--btn);
+  color: var(--btn-text);
+  cursor:pointer;
+  transition: transform .06s ease, background .2s ease, border-color .2s ease, opacity .2s ease;
+  user-select:none;
+}
+.btn:hover{ transform: translateY(-1px); }
+.btn:active{ transform: translateY(0); }
+.btn[disabled]{ opacity:.6; cursor:not-allowed; }
+
+.btn--refresh{ background: #0e1726; border-color:#253048; }
+.btn--ghost{
+  background: var(--btn-ghost);
+  color: var(--btn-ghost-text);
+  border-color: #2a3550;
+}
+.btn--more{
+  background:#0f172a;
+  border-color:#24304a;
+  min-width: 140px;
+}
+.badge{
+  margin-left:8px;
+  background:#0b1220;
+  border:1px solid #27324a;
+  color:#9fb2cf;
+  padding:2px 6px;
+  border-radius: 999px;
+  font-size: 12px;
+}
+
+/* ------- Filters ------- */
+.filters{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  margin: 4px 0 18px;
+}
+
+.select{
+  position:relative;
+}
+.select__btn{
+  background: var(--chip);
+  border: 1px solid var(--outline);
+  color: #d7e1f0;
+  padding: 0 14px;
+  height: 36px;
+  border-radius: 999px;
+  cursor:pointer;
+  min-width: 140px;
+}
+.select__btn:hover{ background: var(--chip-hover); }
+.select.open .select__btn{ background: var(--chip-active); }
+
+.select__menu{
+  position:absolute;
+  top: 44px;
+  left: 0;
+  min-width: 260px;
+  max-height: 320px;
+  overflow:auto;
+  background: var(--panel);
+  border: 1px solid var(--outline);
+  border-radius: 14px;
+  padding: 8px;
+  box-shadow: var(--shadow);
+  display:none;
+  z-index: 30;
+}
+.select.open .select__menu{ display:block; }
+
+/* Search inside dropdown */
+.search{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding: 6px;
+  background: var(--panel-2);
+  border:1px solid var(--outline);
+  border-radius: 10px;
+  margin-bottom: 8px;
+}
+.search input{
+  flex:1;
+  height:28px;
+  background: transparent;
+  border:0;
+  color: var(--text);
+  outline: none;
+}
+.search button{
+  height:24px; width:24px;
+  border-radius:8px;
+  border:1px solid var(--outline);
+  background:#0f1522; color:#b9c6da;
+  cursor:pointer;
+}
+
+/* Options */
+.option{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor:pointer;
+  color:#dbe6f5;
+}
+.option:hover{ background:#1e2533; }
+.option.selected{
+  background:#131b2a;
+  outline: 1px solid #2d3a52;
+}
+
+/* Chip used for owner initials in filter menu */
+.owner-chip{
+  font-weight:700;
+  font-size: 10px;
+}
+
+/* ------- Grid ------- */
+.grid{
+  --gap: 14px;
+  display:grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--gap);
+  min-height: 280px;
+}
+@media (max-width: 900px){
+  .grid{ grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 560px){
+  .grid{ grid-template-columns: 1fr; }
+}
+
+.placeholder{
+  width: 100%;
+  aspect-ratio: 1/1;
+  border-radius: 16px;
+  background: #0f1420;
+  border:1px dashed #24314b;
+  color:#6b7a92;
+  display:flex; align-items:center; justify-content:center;
+}
+
+/* ------- Card ------- */
+.card{
+  position:relative;
+  border-radius: 16px;
+  overflow:hidden;
+  background: #0f1420;
+  border:1px solid #24314b;
+  cursor:pointer;
+  isolation:isolate;
+}
+.card__media{
+  width:100%; height:100%; display:block;
+  object-fit:cover; aspect-ratio:1/1;
+}
+.card__external{
+  width:100%; aspect-ratio:1/1;
+  display:flex; align-items:center; justify-content:center;
+  font-weight:700; letter-spacing:.02em;
+  color:#c7d6ee;
+  background: linear-gradient(180deg,#0f1522 0%, #111827 100%);
+}
+
+/* badges */
+.card__badges{
+  position:absolute; top:8px; right:8px;
+  display:flex; gap:6px; z-index:2;
+}
+.badge-ico{
+  width:22px; height:22px;
+  display:inline-flex; align-items:center; justify-content:center;
+  background: rgba(0,0,0,.48);
+  border: 1px solid rgba(255,255,255,.15);
+  backdrop-filter: blur(6px);
+  border-radius: 8px;
+}
+.badge-ico svg{ width:14px; height:14px; fill:#e8eef7; opacity:.9; }
+.badge-ico__count{
+  font-size: 12px; font-weight:700;
+  padding: 0 6px;
+}
+
+/* owner square badge */
+.card__owner{
+  position:absolute; left:8px; top:8px;
+  width:22px; height:22px; border-radius:6px;
+  display:flex; align-items:center; justify-content:center;
+  color:#fff; font-size:10px; font-weight:800;
+  box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  z-index:2;
+}
+
+/* hover layer */
+.card__hover{
+  position:absolute; inset:auto 0 0 0;
+  background: linear-gradient(180deg, transparent 0%, rgba(0,0,0,.55) 55%, rgba(0,0,0,.8) 100%);
+  padding: 12px;
+  color: #e9f0fa;
+  transform: translateY(0);
+  transition: transform .18s ease;
+}
+.card:hover .card__hover{ transform: translateY(0); }
+
+.card__title{ font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card__date{ margin-top:2px; font-size: 12px; color:#9fb2cf; }
+
+/* ------- More button row ------- */
+.more{ display:flex; justify-content:center; margin-top: 18px; }
+
+/* ------- Overlay & Toasts ------- */
+#overlay[hidden]{ display:none; }
+#overlay{
+  position: fixed; inset:0; background: rgba(4,7,12,.35); z-index: 40;
+  backdrop-filter: blur(2px);
+}
+
+#toasts{ position: fixed; right: 16px; bottom: 16px; z-index: 50; display:flex; flex-direction: column; gap:10px; }
+.toast{
+  background:#0e1523; border:1px solid #2a3550; color:#d7e2f2;
+  padding:10px 12px; border-radius:12px; box-shadow: var(--shadow);
+}
+
+/* ------- Modal (viewer) ------- */
+.modal{ position: fixed; inset:0; z-index: 60; display:none; }
+.modal.is-open{ display:block; }
+.modal__backdrop{
+  position:absolute; inset:0; background: rgba(5,8,13,.6); backdrop-filter: blur(2px);
+}
+.modal__panel{
+  position: relative;
+  margin: 5vh auto;
+  width: min(920px, 92vw);
+  background: var(--panel);
+  border:1px solid var(--outline);
+  border-radius: 16px;
+  padding: 18px 18px 14px;
+  box-shadow: var(--shadow);
+}
+
+.modal__close{
+  position:absolute; right:10px; top:10px;
+  width:30px; height:30px; border-radius:10px;
+  background:#101725; color:#d8e3f5; border:1px solid #28324a;
+  cursor:pointer;
+}
+
+.viewer{ display:flex; flex-direction: column; gap:12px; }
+.viewer__stage{
+  min-height: 60vh; max-height: 70vh;
+  display:flex; align-items:center; justify-content:center;
+  background:#0f1420; border:1px solid #24314b; border-radius:12px; overflow:hidden;
+}
+.viewer__nav{
+  display:flex; align-items:center; justify-content:center; gap:10px;
+}
+.nav{
+  width:38px; height:32px; border-radius:10px;
+  background:#0e1523; color:#d9e4f6; border:1px solid #27324a;
+  cursor:pointer;
+}
+.viewer__dots{ font-size:12px; color:#9fb2cf; }
+.viewer__copy{
+  margin-top: 2px;
+  padding:10px 12px;
+  background:#0f1420; border:1px solid #24314b; border-radius: 12px;
+  color:#cfe0fb; white-space: pre-wrap;
+}
+
+/* ------- Accessibility focus ------- */
+:focus-visible{
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+/* ------- Locks de filtros (Client/Project) ------- */
 .select__btn.is-locked,
 .select__btn:disabled,
 button.is-locked,
 button[disabled]#fClient,
-button[disabled]#fProject {
-  opacity: 0.6;
+button[disabled]#fProject{
+  opacity: .6;
   cursor: not-allowed;
   pointer-events: none; /* evita abrir el dropdown */
 }
-
-/* Por si tu botón tiene focus ring: */
-.select__btn.is-locked:focus {
+.select__btn.is-locked:focus{
   outline: none;
   box-shadow: none;
 }
