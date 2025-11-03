@@ -1,52 +1,81 @@
-<!-- index.html (solo el script de filtros) -->
-<script>
-const qs = new URLSearchParams(location.search);
-const LOCK_CLIENT = qs.get('lockClient') === '1';
-const LOCK_PROJECT = qs.get('lockProject') === '1';
-const Q_CLIENT = qs.get('client') || null;
-const Q_PROJECT = qs.get('project') || null;
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+  <title>IG Grid</title>
+  <!-- cache-bust -->
+  <link rel="stylesheet" href="./styles.css?v=9"/>
+</head>
+<body>
+  <div id="app" class="wrap">
+    <div class="toolbar">
+      <div class="left">
+        <button id="btnRefresh" class="btn btn--refresh">Refresh</button>
+      </div>
+      <div class="right">
+        <button id="btnClear" class="btn btn--ghost">
+          Clear filters <span id="badgeCount" class="badge" hidden>0</span>
+        </button>
+      </div>
+    </div>
 
-const LS_KEY = 'grid-filters-v1';
+    <div class="filters" id="filters">
+      <div class="select">
+        <button class="select__btn" id="fClient" aria-haspopup="listbox" aria-expanded="false">All Clients</button>
+        <div class="select__menu" id="mClient" role="listbox" aria-labelledby="fClient"></div>
+      </div>
 
-function loadPersisted() {
-  try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch { return {}; }
-}
-function savePersisted(state) {
-  localStorage.setItem(LS_KEY, JSON.stringify(state || {}));
-}
+      <div class="select">
+        <button class="select__btn" id="fProject" aria-haspopup="listbox" aria-expanded="false">All Projects</button>
+        <div class="select__menu" id="mProject" role="listbox" aria-labelledby="fProject"></div>
+      </div>
 
-let state = loadPersisted();
+      <div class="select">
+        <button class="select__btn" id="fPlatform" aria-haspopup="listbox" aria-expanded="false">All Platforms</button>
+        <div class="select__menu" id="mPlatform" role="listbox" aria-labelledby="fPlatform"></div>
+      </div>
 
-if (Q_CLIENT) state.client = Q_CLIENT;
-if (Q_PROJECT) state.project = Q_PROJECT;
+      <div class="select">
+        <button class="select__btn" id="fOwner" aria-haspopup="listbox" aria-expanded="false">All Owners</button>
+        <div class="select__menu" id="mOwner" role="listbox" aria-labelledby="fOwner"></div>
+      </div>
 
-async function applyFiltersFromState() {
-  // aquí llamas a /api/filters para poblar dropdowns como ya lo haces
-  // y luego aplicas state.{client,project,owner,status,platform}
-  // IMPORTANTE: si LOCK_CLIENT/LOCK_PROJECT, deshabilita esos chips/selects.
-  if (LOCK_CLIENT) disableClientSelector();
-  if (LOCK_PROJECT) disableProjectSelector();
-  await reloadGrid(); // tu función existente
-}
+      <div class="select">
+        <button class="select__btn" id="fStatus" aria-haspopup="listbox" aria-expanded="false">All Status</button>
+        <div class="select__menu" id="mStatus" role="listbox" aria-labelledby="fStatus"></div>
+      </div>
+    </div>
 
-function clearFilters() {
-  // borra todo MENOS los bloqueados
-  const s = {};
-  if (LOCK_CLIENT && state.client) s.client = state.client;
-  if (LOCK_PROJECT && state.project) s.project = state.project;
-  state = s;
-  savePersisted(state);
-  applyFiltersFromState();
-}
+    <div id="grid" class="grid"></div>
 
-// Cada vez que el usuario cambia un filtro:
-function onFilterChange(key, value) {
-  if (key === 'client' && LOCK_CLIENT) return;
-  if (key === 'project' && LOCK_PROJECT) return;
-  state[key] = value;
-  savePersisted(state);
-  reloadGrid();
-}
+    <div class="more">
+      <button id="btnMore" class="btn btn--more">Load more</button>
+    </div>
+  </div>
 
-document.addEventListener('DOMContentLoaded', applyFiltersFromState);
-</script>
+  <!-- overlay & toasts -->
+  <div id="overlay" hidden aria-hidden="true"></div>
+  <div id="toasts" aria-live="polite" role="status" aria-atomic="true"></div>
+
+  <!-- Modal -->
+  <div id="modal" class="modal" aria-hidden="true">
+    <div class="modal__backdrop" id="modalBackdrop"></div>
+    <div class="modal__panel" role="dialog" aria-modal="true">
+      <button class="modal__close" id="modalClose" aria-label="Close">✕</button>
+      <div class="viewer">
+        <div class="viewer__stage" id="vStage" tabindex="0"></div>
+        <div class="viewer__nav">
+          <button class="nav prev" id="vPrev" aria-label="Prev">‹</button>
+          <div class="viewer__dots" id="vDots"></div>
+          <button class="nav next" id="vNext" aria-label="Next">›</button>
+        </div>
+        <div class="viewer__copy" id="vCopy"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- cache-bust -->
+  <script type="module" src="./index.js?v=9"></script>
+</body>
+</html>
