@@ -1,5 +1,6 @@
 // /api/_notion.js
 import { Client } from '@notionhq/client';
+import { PAGE_SIZE } from './schema.js';
 
 const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
@@ -10,6 +11,7 @@ export async function queryDatabase(dbId, body = {}) {
   do {
     const res = await notion.databases.query({
       database_id: dbId,
+      page_size: PAGE_SIZE,
       ...body,
       start_cursor: cursor,
     });
@@ -23,6 +25,7 @@ export async function queryDatabase(dbId, body = {}) {
 export function getProp(page, name) {
   const p = page.properties?.[name];
   if (!p) return null;
+
   switch (p.type) {
     case 'title':
       return p.title.map(t => t.plain_text).join(' ');
@@ -35,6 +38,7 @@ export function getProp(page, name) {
     case 'date':
       return p.date?.start || null;
     case 'relation':
+      // devolvemos array de IDs
       return p.relation?.map(r => r.id) || [];
     case 'files':
       return p.files || [];
@@ -45,6 +49,18 @@ export function getProp(page, name) {
   }
 }
 
-export async function getPage(pageId) {
-  return notion.pages.retrieve({ page_id: pageId });
+// convierte una DB (clients / projects) en { id: name }
+export function pagesToMap(pages) {
+  const map = {};
+  for (const pg of pages) {
+    const name =
+      getProp(pg, 'Name') ||
+      getProp(pg, 'Client') ||
+      getProp(pg, 'Project') ||
+      null;
+    if (name) {
+      map[pg.id] = name;
+    }
+  }
+  return map;
 }
