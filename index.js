@@ -118,6 +118,8 @@ function wireMenus() {
   document.querySelectorAll('.select').forEach((sel) => {
     const btn = sel.querySelector('.select__btn');
     btn.addEventListener('click', (e) => {
+      // si está “lockeado” no se abre
+      if (btn.getAttribute('aria-disabled') === 'true') return;
       e.stopPropagation();
       const open = sel.classList.contains('open');
       document.querySelectorAll('.select').forEach((s) => s.classList.remove('open'));
@@ -465,6 +467,7 @@ async function fetchMore(replace) {
   }
 }
 
+/* === mapPostShape con soporte external (thumb de Drive) === */
 function mapPostShape(p) {
   const assets = Array.isArray(p.assets)
     ? p.assets
@@ -480,12 +483,12 @@ function mapPostShape(p) {
     pinned: !!p.pinned,
     copy: p.copy || '',
     media: assets.map((a) => {
-      // aquí respetamos lo que mandó el backend
       if (a.type === 'external') {
         return {
           type: 'external',
           provider: a.provider || 'link',
           url: a.url || '',
+          thumb: a.thumb || '',
         };
       }
       return {
@@ -508,6 +511,7 @@ function renderGrid(list) {
   hookCardEvents();
 }
 
+/* === renderCard con miniatura de Drive y label para otros external === */
 function renderCard(p) {
   const first = p.media && p.media[0];
   const isVideo = first && first.type === 'video';
@@ -532,13 +536,14 @@ function renderCard(p) {
         first.url
       )}"></video>`;
     } else if (isExternal) {
-      const label =
-        first.provider === 'canva'
-          ? 'Canva'
-          : first.provider === 'drive'
-          ? 'Drive'
-          : 'Link';
-      mediaEl = `<div class="card__external">${label}</div>`;
+      if (first.provider === 'drive' && first.thumb) {
+        mediaEl = `<img class="card__media" alt="" src="${escapeHtml(first.thumb)}" />`;
+      } else if (first.provider !== 'link') {
+        const label = first.provider === 'canva' ? 'Canva' : (first.provider === 'drive' ? 'Drive' : 'Link');
+        mediaEl = `<div class="card__external">${label}</div>`;
+      } else {
+        mediaEl = `<div class="card__external">Link</div>`;
+      }
     } else {
       mediaEl = `<img class="card__media" alt="" src="${escapeHtml(first.url)}" />`;
     }
@@ -671,6 +676,7 @@ function moveModal(step) {
   renderModal();
 }
 
+/* === renderModal: Canva/Drive en iframe y botón para Canva === */
 function renderModal() {
   const a = state.modal.assets[state.modal.index];
   if (a.type === 'video') {
@@ -678,10 +684,19 @@ function renderModal() {
       a.url
     )}" style="max-width:100%;max-height:60vh;object-fit:contain"></video>`;
   } else if (a.type === 'external') {
-    // Canva / Drive / link
-    els.vStage.innerHTML = `<iframe src="${escapeHtml(
-      a.url
-    )}" style="width:100%;min-height:60vh;border:0;" allow="autoplay; encrypted-media"></iframe>`;
+    if (a.provider === 'canva') {
+      els.vStage.innerHTML = `
+        <div style="width:100%;display:flex;flex-direction:column;gap:8px;align-items:center">
+          <iframe src="${escapeHtml(
+            a.url
+          )}" style="width:100%;min-height:60vh;border:0;" allow="autoplay; encrypted-media"></iframe>
+          <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener" class="btn" style="text-decoration:none">Open in Canva</a>
+        </div>`;
+    } else {
+      els.vStage.innerHTML = `<iframe src="${escapeHtml(
+        a.url
+      )}" style="width:100%;min-height:60vh;border:0;" allow="autoplay; encrypted-media"></iframe>`;
+    }
   } else {
     els.vStage.innerHTML = `<img alt="" src="${escapeHtml(
       a.url
@@ -721,6 +736,14 @@ function applyInitialURLFilters() {
 
   // si viene client → filtrar los projects que se muestran
   if (pClient.length) filterProjectsForClients();
+
+  // --- LOCK VISUAL: deshabilita selecciones que llegaron por URL ---
+  if (state.locked.clients.length && els.fClient) {
+    els.fClient.setAttribute('aria-disabled', 'true');
+  }
+  if (state.locked.projects.length && els.fProject) {
+    els.fProject.setAttribute('aria-disabled', 'true');
+  }
 }
 
 function syncURLWithFilters() {
