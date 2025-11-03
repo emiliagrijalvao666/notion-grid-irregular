@@ -9,22 +9,20 @@ const CONTENT_DB_ID =
 const PAGE_SIZE_MAX = 50;
 
 // candidatos de propiedades en el Content DB
-const TITLE_CANDS = ['Post', 'Name', 'Título', 'Title'];
-const DATE_CANDS = ['Publish Date', 'Date', 'Fecha'];
-const OWNER_CANDS = ['Owner', 'Owners', 'Responsable', 'Asignado a'];
-const STATUS_CANDS = ['Status', 'Estado', 'State'];
-const PLATFORM_CANDS = ['Platform', 'Platforms'];
-const PINNED_CANDS = ['Pinned', 'Pin', 'Destacado'];
-const HIDE_CANDS = ['Hide', 'Hidden', 'Oculto', 'Archive', 'Archived'];
-const COPY_CANDS = ['Copy', 'Caption', 'Description', 'Descripción'];
-const MEDIA_CANDS = ['Attachment', 'Media', 'Files', 'File', 'Imagen', 'Imágenes', 'Video'];
-
-// estas son las que te salen en /api/diag
-const REL_CLIENTS_CANDS = ['Client', 'PostClient', 'ClientName'];
-const REL_PROJECTS_CANDS = ['Project', 'PostProject', 'ProjectName'];
-
-// campos tipo URL / texto donde a veces ponen CANVA o DRIVE
-const LINK_CANDS = ['Link', 'Canva', 'URL', 'Enlace'];
+const TITLE_CANDS       = ['Post','Name','Título','Title','Post title'];
+const DATE_CANDS        = ['Publish Date','Fecha','Date','Pub date'];
+const OWNER_CANDS       = ['Owner','Owners','Responsable','Asignado a'];
+const STATUS_CANDS      = ['Status','Estado','State'];
+const PLATFORM_CANDS    = ['Platform','Platforms'];
+const PINNED_CANDS      = ['Pinned','Pin','Destacado'];
+const HIDE_CANDS        = ['Hide','Hidden','Oculto','Archive','Archived'];
+const COPY_CANDS        = ['Copy','Caption','Description','Descripción','Texto'];
+const MEDIA_CANDS       = ['Attachment','Attachments','Media','Files','File','Imagen','Imágenes','Video','Canva'];
+// 👇 estas son las columnas donde Mich puede poner el link directo de canva/drive
+const LINK_CANDS        = ['Link','Canva','URL','Enlace','Embed'];
+// relaciones
+const REL_CLIENTS_CANDS  = ['Client','Clients','Brand','Brands','PostClient','ClientName'];
+const REL_PROJECTS_CANDS = ['Project','Projects','PostProject','ProjectName'];
 
 export default async function handler(req, res) {
   try {
@@ -34,43 +32,45 @@ export default async function handler(req, res) {
 
     const qs = req.query;
     const pageSize = clampInt(qs.pageSize, 12, 1, PAGE_SIZE_MAX);
-    const cursor = (qs.cursor && String(qs.cursor)) || undefined;
+    const cursor   = (qs.cursor && String(qs.cursor)) || undefined;
 
+    // filtros que vienen del front
     const sel = {
-      clients: asArray(qs.client),
-      projects: asArray(qs.project),
+      clients:   asArray(qs.client),
+      projects:  asArray(qs.project),
       platforms: asArray(qs.platform),
-      owners: asArray(qs.owner),
-      statuses: asArray(qs.status),
+      owners:    asArray(qs.owner),   // IDs
+      statuses:  asArray(qs.status),  // single
     };
 
-    // 1) leemos el schema
+    // leemos el esquema de Notion
     const meta = await notion.databases.retrieve({ database_id: CONTENT_DB_ID });
 
-    const titleKey = firstExisting(meta, TITLE_CANDS, 'title');
-    const dateKey = firstExisting(meta, DATE_CANDS, 'date');
-    const ownerKey = firstExisting(meta, OWNER_CANDS, 'people');
-    const statusKey = firstExisting(meta, STATUS_CANDS, 'select');
-    const platformKey = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
-    const pinnedKey = firstExisting(meta, PINNED_CANDS, 'checkbox');
-    const hideKey = firstExisting(meta, HIDE_CANDS, 'checkbox');
-    const copyKey = firstExisting(meta, COPY_CANDS);
-    const mediaKey = firstExisting(meta, MEDIA_CANDS, 'files');
+    const titleKey       = firstExisting(meta, TITLE_CANDS, 'title');
+    const dateKey        = firstExisting(meta, DATE_CANDS, 'date');
+    const ownerKey       = firstExisting(meta, OWNER_CANDS, 'people');
+    const statusKey      = firstExisting(meta, STATUS_CANDS, 'select');
+    const platformKey    = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
+    const pinnedKey      = firstExisting(meta, PINNED_CANDS, 'checkbox');
+    const hideKey        = firstExisting(meta, HIDE_CANDS, 'checkbox');
+    const copyKey        = firstExisting(meta, COPY_CANDS); // rich_text o title
+    const mediaKey       = firstExisting(meta, MEDIA_CANDS, 'files');
+    const linkKey        = firstExisting(meta, LINK_CANDS); // puede ser rich_text o url
+    const relClientKey   = firstExisting(meta, REL_CLIENTS_CANDS, 'relation');
+    const relProjectKey  = firstExisting(meta, REL_PROJECTS_CANDS, 'relation');
 
-    const relClientKey = firstExisting(meta, REL_CLIENTS_CANDS, 'relation');
-    const relProjectKey = firstExisting(meta, REL_PROJECTS_CANDS, 'relation');
-
-    // 2) armamos el filtro que Notion sí entiende
+    // ---- Notion filter (lo que sí podemos filtrar desde Notion) ----
     const and = [];
 
+    // ocultos
     if (hideKey) {
       and.push({ property: hideKey, checkbox: { equals: false } });
     }
-
+    // status
     if (statusKey && sel.statuses.length === 1) {
       and.push({ property: statusKey, select: { equals: sel.statuses[0] } });
     }
-
+    // platforms (multi-select)
     if (platformKey && sel.platforms.length > 0) {
       and.push({
         or: sel.platforms.map((p) => ({
@@ -79,7 +79,7 @@ export default async function handler(req, res) {
         })),
       });
     }
-
+    // client
     if (relClientKey && sel.clients.length > 0) {
       and.push({
         or: sel.clients.map((id) => ({
@@ -88,7 +88,7 @@ export default async function handler(req, res) {
         })),
       });
     }
-
+    // project
     if (relProjectKey && sel.projects.length > 0) {
       and.push({
         or: sel.projects.map((id) => ({
@@ -97,7 +97,7 @@ export default async function handler(req, res) {
         })),
       });
     }
-
+    // owner
     if (ownerKey && sel.owners.length > 0) {
       and.push({
         or: sel.owners.map((id) => ({
@@ -109,7 +109,7 @@ export default async function handler(req, res) {
 
     const filter = and.length ? { and } : undefined;
 
-    // 3) query
+    // ---- query ----
     const resp = await notion.databases.query({
       database_id: CONTENT_DB_ID,
       start_cursor: cursor,
@@ -118,7 +118,7 @@ export default async function handler(req, res) {
       sorts: buildSorts(meta, dateKey),
     });
 
-    // 4) mapeamos
+    // ---- map posts ----
     const posts = resp.results.map((page) =>
       mapPageToPost(page, {
         titleKey,
@@ -129,7 +129,7 @@ export default async function handler(req, res) {
         pinnedKey,
         copyKey,
         mediaKey,
-        linkKeys: LINK_CANDS,
+        linkKey,
       })
     );
 
@@ -150,7 +150,6 @@ function clampInt(v, def, min, max) {
   if (Number.isNaN(n)) return def;
   return Math.max(min, Math.min(max, n));
 }
-
 function asArray(v) {
   if (v === undefined || v === null) return [];
   return Array.isArray(v) ? v : [v];
@@ -182,27 +181,20 @@ function mapPageToPost(page, keys) {
     pinnedKey,
     copyKey,
     mediaKey,
-    linkKeys,
+    linkKey,
   } = keys;
 
-  const title = readTitle(page.properties[titleKey]);
-  const date = readDate(page.properties[dateKey]);
-  const ownerNames = readOwners(page.properties[ownerKey]);
-  const platforms = readMulti(page.properties[platformKey]);
-  const pinned = readCheckbox(page.properties[pinnedKey]);
-  const copy = readText(page.properties[copyKey]);
-  const files = readFiles(page.properties[mediaKey]);
+  const title       = readTitle(page.properties[titleKey]);
+  const date        = readDate(page.properties[dateKey]);
+  const ownerNames  = readOwners(page.properties[ownerKey]);
+  const platforms   = readMulti(page.properties[platformKey]);
+  const pinned      = readCheckbox(page.properties[pinnedKey]);
+  const copy        = readText(page.properties[copyKey]);
+  const files       = readFiles(page.properties[mediaKey]);  // <-- aquí ya metemos canva/drive si vienen en Attachment
+  const linkAssets  = readExternalLinks(page.properties[linkKey]); // <-- columnas tipo Link/Canva/URL
 
-  // aquí leemos también Link / Canva / URL
-  const extraFromLinks = [];
-  for (const lk of linkKeys || []) {
-    const p = page.properties[lk];
-    if (!p) continue;
-    const extra = readExternalLinkAsMedia(p);
-    if (extra) extraFromLinks.push(extra);
-  }
-
-  const assets = [...files, ...extraFromLinks];
+  // fusionamos: attachments + links sueltos
+  const assets = [...files, ...linkAssets];
 
   return {
     id: page.id,
@@ -220,108 +212,95 @@ function readTitle(prop) {
   if (!prop || prop.type !== 'title') return '';
   return (prop.title || []).map((t) => t.plain_text).join('').trim();
 }
-
 function readDate(prop) {
   if (!prop || prop.type !== 'date' || !prop.date) return null;
   return prop.date.start || null;
 }
-
 function readOwners(prop) {
   if (!prop || prop.type !== 'people') return [];
   return (prop.people || []).map((p) => p.name || p.person?.email || 'Unknown');
 }
-
 function readMulti(prop) {
   if (!prop) return [];
   if (prop.type === 'multi_select') return (prop.multi_select || []).map((o) => o.name);
   if (prop.type === 'select') return prop.select ? [prop.select.name] : [];
   return [];
 }
-
 function readCheckbox(prop) {
   if (!prop || prop.type !== 'checkbox') return false;
   return !!prop.checkbox;
 }
-
 function readText(prop) {
   if (!prop) return '';
   if (prop.type === 'rich_text')
     return (prop.rich_text || []).map((t) => t.plain_text).join('').trim();
   if (prop.type === 'title')
     return (prop.title || []).map((t) => t.plain_text).join('').trim();
-  if (prop.type === 'url') return prop.url || '';
   return '';
 }
 
+/**
+ * Lee archivos de una columna tipo "files"
+ * y ADEMÁS intenta detectar si el archivo externo es de canva o de drive
+ */
 function readFiles(prop) {
   if (!prop || prop.type !== 'files') return [];
   const files = prop.files || [];
   return files.map((f) => {
-    const url = f?.[f.type]?.url || '';
-    return { type: guessType(url), url };
+    // si es un archivo externo, viene en f.external.url
+    const rawUrl = f?.[f.type]?.url || '';
+    return classifyMediaUrl(rawUrl);
   });
 }
 
-// convierte los links de Canva / Drive en media que el frontend pueda mostrar
-function readExternalLinkAsMedia(prop) {
-  // puede venir como url directa o rich_text
-  let raw = '';
-  if (prop.type === 'url') {
-    raw = prop.url || '';
-  } else if (prop.type === 'rich_text') {
-    raw = (prop.rich_text || []).map((t) => t.plain_text).join('').trim();
-  } else {
-    return null;
+/**
+ * Lee columnas de texto/url donde Mich puede pegar el link de Canva/Drive
+ */
+function readExternalLinks(prop) {
+  if (!prop) return [];
+  // puede venir como url
+  if (prop.type === 'url' && prop.url) {
+    return [classifyMediaUrl(prop.url)];
   }
-
-  if (!raw) return null;
-
-  const lower = raw.toLowerCase();
-
-  // Canva: https://www.canva.com/design/...
-  if (lower.includes('canva.com/design')) {
-    // este mismo link sirve para <iframe> en la vista grande
-    return {
-      type: 'external',
-      provider: 'canva',
-      url: raw,
-    };
+  // puede venir como rich_text
+  if (prop.type === 'rich_text') {
+    const txt = (prop.rich_text || []).map((t) => t.plain_text).join('').trim();
+    if (!txt) return [];
+    return [classifyMediaUrl(txt)];
   }
-
-  // Google Drive file
-  // https://drive.google.com/file/d/FILEID/view?usp=...
-  if (lower.includes('drive.google.com/file/')) {
-    const id = raw.split('/file/')[1]?.split('/')[0];
-    const embed = id
-      ? `https://drive.google.com/file/d/${id}/preview`
-      : raw;
-    return {
-      type: 'external',
-      provider: 'drive',
-      url: embed,
-    };
-  }
-
-  // Google Drive folder (no podemos listar el folder, pero lo mandamos igual)
-  if (lower.includes('drive.google.com/drive/folders/')) {
-    return {
-      type: 'external',
-      provider: 'drive',
-      url: raw,
-    };
-  }
-
-  // cualquier otro link lo mandamos igual
-  return {
-    type: 'external',
-    provider: 'link',
-    url: raw,
-  };
+  return [];
 }
 
-function guessType(url = '') {
-  const u = url.toLowerCase();
-  if (u.includes('.mp4') || u.includes('video/mp4')) return 'video';
-  if (u.includes('.mov') || u.includes('video/quicktime')) return 'video';
-  return 'image';
+/**
+ * Dado un URL decide si es imagen, video o embed externo
+ */
+function classifyMediaUrl(url = '') {
+  const u = (url || '').trim();
+  if (!u) return { type: 'image', url: '' };
+
+  // 1) Canva
+  if (u.includes('canva.com/design/')) {
+    return { type: 'external', url: u };
+  }
+
+  // 2) Google Drive: archivo
+  if (u.includes('drive.google.com/file/')) {
+    // forzamos preview
+    const preview = u.includes('/preview') ? u : u.replace(/\/view.*$/, '') + '/preview';
+    return { type: 'external', url: preview };
+  }
+
+  // 3) Google Drive: carpeta → no podemos embebida bien → lo mandamos igual pero será blank
+  if (u.includes('drive.google.com/drive/folders/')) {
+    return { type: 'external', url: u };
+  }
+
+  // 4) extensiones típicas de video
+  const lower = u.toLowerCase();
+  if (lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.includes('video/mp4')) {
+    return { type: 'video', url: u };
+  }
+
+  // 5) por defecto es imagen
+  return { type: 'image', url: u };
 }
