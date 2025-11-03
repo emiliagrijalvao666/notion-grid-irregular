@@ -1,66 +1,29 @@
 // /api/_notion.js
 import { Client } from '@notionhq/client';
-import { PAGE_SIZE } from './schema.js';
 
-const notion = new Client({ auth: process.env.NOTION_TOKEN });
+export const notion = new Client({ auth: process.env.NOTION_TOKEN });
 
-export async function queryDatabase(dbId, body = {}) {
-  const pages = [];
-  let cursor = undefined;
+// Fallbacks para que funcione con tus vars actuales
+export const CONTENT_DB_ID =
+  process.env.CONTENT_DB_ID ||
+  process.env.NOTION_DB_ID ||
+  process.env.NOTION_DATABASE_ID || null;
 
-  do {
-    const res = await notion.databases.query({
-      database_id: dbId,
-      page_size: PAGE_SIZE,
-      ...body,
-      start_cursor: cursor,
-    });
-    pages.push(...res.results);
-    cursor = res.has_more ? res.next_cursor : undefined;
-  } while (cursor);
+export const PROJECTS_DB_ID =
+  process.env.PROJECTS_DB_ID ||
+  process.env.NOTION_DB_PROJECTS ||
+  process.env.PROJECTS_DATABASE_ID || null;
 
-  return pages;
+export const CLIENTS_DB_ID =
+  process.env.CLIENTS_DB_ID ||
+  process.env.NOTION_DB_CLIENTS || null;
+
+export function ensureEnv() {
+  if (!process.env.NOTION_TOKEN) throw new Error('Missing NOTION_TOKEN');
+  if (!CONTENT_DB_ID) throw new Error('Missing CONTENT_DB_ID/NOTION_DB_ID');
 }
 
-export function getProp(page, name) {
-  const p = page.properties?.[name];
-  if (!p) return null;
-
-  switch (p.type) {
-    case 'title':
-      return p.title.map(t => t.plain_text).join(' ');
-    case 'rich_text':
-      return p.rich_text.map(t => t.plain_text).join(' ');
-    case 'select':
-      return p.select ? p.select.name : null;
-    case 'multi_select':
-      return p.multi_select.map(s => s.name);
-    case 'date':
-      return p.date?.start || null;
-    case 'relation':
-      // devolvemos array de IDs
-      return p.relation?.map(r => r.id) || [];
-    case 'files':
-      return p.files || [];
-    case 'url':
-      return p.url || null;
-    default:
-      return null;
-  }
-}
-
-// convierte una DB (clients / projects) en { id: name }
-export function pagesToMap(pages) {
-  const map = {};
-  for (const pg of pages) {
-    const name =
-      getProp(pg, 'Name') ||
-      getProp(pg, 'Client') ||
-      getProp(pg, 'Project') ||
-      null;
-    if (name) {
-      map[pg.id] = name;
-    }
-  }
-  return map;
+export async function safe(promise) {
+  try { return await promise; }
+  catch (e) { console.error('[Notion]', e?.message || e); return null; }
 }
