@@ -32,6 +32,9 @@ const els = {
   vNext: document.getElementById('vNext'),
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
+
+  // ⚙️ nuevo: botón engranaje
+  gear: document.getElementById('btnGear'),
 };
 
 /* ----- State ----- */
@@ -78,6 +81,7 @@ const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', '
     'vNext',
     'vDots',
     'vCopy',
+    // si falta el gear no rompemos nada, solo avisamos
   ];
   const missing = required.filter((id) => !document.getElementById(id));
   if (missing.length) {
@@ -95,6 +99,11 @@ async function init() {
   els.more?.addEventListener('click', onMore);
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
+
+  // ⚙️ wire del engranaje (mostrar/ocultar filtros)
+  if (els.gear && els.filtersWrap) {
+    els.gear.addEventListener('click', onToggleFilters);
+  }
 
   // placeholders iniciales
   if (els.grid) els.grid.innerHTML = placeholderList(12);
@@ -830,4 +839,15 @@ function svgVideo() {
 }
 function svgCarousel() {
   return `<svg viewBox="0 0 24 24"><path d="M3 7h14v10H3zM19 9h2v6h-2z"/></svg>`;
+}
+
+/* =========================
+   Filters toggle (gear)
+   ========================= */
+
+function onToggleFilters() {
+  if (!els.filtersWrap || !els.gear) return;
+  const hidden = els.filtersWrap.classList.toggle('filters--hidden');
+  els.gear.setAttribute('aria-expanded', hidden ? 'false' : 'true');
+  els.gear.title = hidden ? 'Show filters' : 'Hide filters';
 }
