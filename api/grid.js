@@ -1,218 +1,112 @@
 // /api/grid.js
-import {
-  CONTENT_DB_ID,
-  CLIENTS_DB_ID,
-  PROJECTS_DB_ID,
-  contentSchema,
-} from './schema.js';
+import { schema } from './schema';
+import { getNotionRows } from './_notion'; // tu helper existente
 
-import {
-  queryDatabase,
-  getProp,
-  pagesToMap,
-} from './_notion.js';
+const CANVA_RE = /https?:\/\/(?:www\.)?canva\.com\/design\/([^\/?#\s]+)[^\s]*/i;
+const DRIVE_FILE_RE = /https?:\/\/(?:drive\.google\.com\/file\/d\/|drive\.google\.com\/open\?id=|drive\.google\.com\/uc\?id=)([A-Za-z0-9_-]+)/i;
+const DRIVE_QUERY_ID_RE = /[?&]id=([A-Za-z0-9_-]+)/i;
 
-const TEXT_SPLIT = /[\n,;]+/;
-
-function normalizeDate(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return null;
-  return {
-    raw: dateStr,
-    short: d.toLocaleDateString('es-EC', {
-      month: 'short',
-      day: 'numeric',
-    }),
-  };
+function splitLinks(text) {
+  if (!text) return [];
+  // separa por saltos de línea, comas y espacios múltiples
+  return text.split(/[\n,\s]+/).map(s => s.trim()).filter(Boolean);
 }
 
-function isDrive(url) {
-  return typeof url === 'string' && url.includes('drive.google.com');
+function driveIdFrom(url) {
+  if (!url) return null;
+  let m = url.match(DRIVE_FILE_RE);
+  if (m && m[1]) return m[1];
+  m = url.match(DRIVE_QUERY_ID_RE);
+  if (m && m[1]) return m[1];
+  // fallback: /folders/... no se embeddea
+  return null;
 }
 
-function toDrivePreview(url) {
-  if (!url) return url;
-  // /file/d/{id}/...
-  if (url.includes('/file/d/')) {
-    const m = url.match(/\/file\/d\/([^/]+)/);
-    if (m) {
-      return `https://drive.google.com/file/d/${m[1]}/preview`;
-    }
+async function canvaCover(url) {
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0' }});
+    const html = await r.text();
+    // busca og:image
+    const m = html.match(/property=["']og:image["']\s+content=["']([^"']+)["']/i);
+    return m ? m[1] : null;
+  } catch {
+    return null;
   }
-  // ?id=...
-  if (url.includes('open?id=')) {
-    const u = new URL(url);
-    const id = u.searchParams.get('id');
-    if (id) {
-      return `https://drive.google.com/file/d/${id}/preview`;
-    }
-  }
-  return url;
 }
 
-function isCanva(url) {
-  return typeof url === 'string' && url.includes('canva.com');
+async function resolveExternalLinks(linkTexts) {
+  const media = [];
+  for (const url of linkTexts) {
+    if (!/^https?:\/\//i.test(url)) continue;
+
+    // DRIVE
+    const did = driveIdFrom(url);
+    if (did) {
+      media.push({
+        kind: 'drive',
+        href: `https://drive.google.com/file/d/${did}/preview`,
+        cover: `https://drive.google.com/thumbnail?id=${did}`,
+        label: 'Drive',
+      });
+      continue;
+    }
+
+    // CANVA
+    if (CANVA_RE.test(url)) {
+      const cover = await canvaCover(url); // puede ser null si no hay acceso
+      media.push({
+        kind: cover ? 'external-cover' : 'external',
+        href: url,
+        cover: cover || null,
+        label: 'Canva',
+      });
+      continue;
+    }
+
+    // Otros externos
+    media.push({ kind: 'external', href: url, cover: null, label: 'Link' });
+  }
+  return media;
+}
+
+function notionFilesToMedia(notionFilesProp) {
+  // Notion files (Attachment) ya te daban portada; mantenemos eso
+  if (!Array.isArray(notionFilesProp)) return [];
+  return notionFilesProp.map(f => {
+    const fileUrl = f?.file?.url || f?.external?.url || null;
+    return fileUrl ? { kind: 'file', href: fileUrl, cover: fileUrl, label: 'File' } : null;
+  }).filter(Boolean);
 }
 
 export default async function handler(req, res) {
   try {
-    const { client, project, platform, owner, status } = req.query;
+    const rows = await getNotionRows(schema); // mantiene tu lógica
+    const enriched = [];
+    for (const row of rows) {
+      const files = [];
 
-    // 1. traemos las 3 bases
-    const [contentPages, clientPages, projectPages] = await Promise.all([
-      queryDatabase(CONTENT_DB_ID, {}),
-      queryDatabase(CLIENTS_DB_ID, {}),
-      queryDatabase(PROJECTS_DB_ID, {}),
-    ]);
+      // 1) Files/Attachment de Notion (imágenes, videos subidos)
+      const att = row.files?.Attachment;
+      files.push(...notionFilesToMedia(att));
 
-    // 2. mapa id -> nombre
-    const clientMap  = pagesToMap(clientPages);
-    const projectMap = pagesToMap(projectPages);
+      // 2) Links externos desde texto (Link y/o Canva)
+      const linkTxt = row.files?.Link;
+      const canvaTxt = row.files?.Canva;
+      const allTxt = splitLinks([linkTxt, canvaTxt].filter(Boolean).join('\n'));
+      const ext = await resolveExternalLinks(allTxt);
+      files.push(...ext);
 
-    const rows = [];
+      // cover del card = 1er media que tenga cover
+      const cover = (files.find(f => f.cover)?.cover) || null;
 
-    for (const page of contentPages) {
-      // CLIENTE
-      const relClients = getProp(page, contentSchema.clientRel);
-      const clientName = Array.isArray(relClients) && relClients.length
-        ? (clientMap[relClients[0]] || null)
-        : null;
-
-      // PROYECTO
-      const relProjects = getProp(page, contentSchema.projectRel);
-      const projectName = Array.isArray(relProjects) && relProjects.length
-        ? (projectMap[relProjects[0]] || null)
-        : null;
-
-      // ---- FILTROS (por NOMBRE) ----
-      if (client && clientName !== client) continue;
-      if (project && projectName !== project) continue;
-
-      // PLATFORM
-      const pagePlats = getProp(page, contentSchema.platforms);
-      if (platform) {
-        if (Array.isArray(pagePlats)) {
-          if (!pagePlats.includes(platform)) continue;
-        } else if (pagePlats !== platform) continue;
-      }
-
-      // OWNER
-      const pageOwner = getProp(page, contentSchema.owners);
-      if (owner && pageOwner !== owner) continue;
-
-      // STATUS
-      const pageStatus = getProp(page, contentSchema.status);
-      if (status && pageStatus !== status) continue;
-
-      // ---------- MEDIA ----------
-      const medias = [];
-
-      // 1) Attachment (files o external)
-      const att = getProp(page, 'Attachment');
-      if (Array.isArray(att) && att.length) {
-        att.forEach(f => {
-          if (f.external) {
-            medias.push({
-              type: 'external',
-              src: f.external.url,
-            });
-          } else if (f.file) {
-            // normalmente imagen
-            medias.push({
-              type: 'image',
-              src: f.file.url,
-            });
-          }
-        });
-      }
-
-      // helper para "limpiar" texto -> array de urls
-      const addFromText = (text, labelHint) => {
-        if (typeof text !== 'string' || !text.trim()) return;
-        const parts = text.split(TEXT_SPLIT).map(s => s.trim()).filter(Boolean);
-        parts.forEach(url => {
-          if (isDrive(url)) {
-            medias.push({
-              type: 'external',
-              src: toDrivePreview(url),
-              label: 'drive',
-            });
-          } else if (isCanva(url)) {
-            medias.push({
-              type: 'external',
-              src: url,
-              label: 'canva',
-            });
-          } else {
-            medias.push({
-              type: 'external',
-              src: url,
-              label: labelHint || 'link',
-            });
-          }
-        });
-      };
-
-      // 2) Link (texto)
-      addFromText(getProp(page, 'Link'), 'link');
-
-      // 3) Canva (texto)
-      addFromText(getProp(page, 'Canva'), 'canva');
-
-      // ---------- PREVIEW ----------
-      let preview = null;
-      let previewLabel = null;
-
-      if (medias.length) {
-        const first = medias[0];
-        if (first.type === 'image') {
-          preview = { type: 'image', src: first.src };
-        } else {
-          // external (canva, drive, etc)
-          preview = { type: 'external' };
-          previewLabel = first.label || 'external';
-        }
-      }
-
-      // título / fecha
-      const title =
-        getProp(page, contentSchema.title) ||
-        getProp(page, 'Name') ||
-        projectName ||
-        clientName ||
-        '—';
-
-      const date = normalizeDate(getProp(page, contentSchema.date));
-
-      // mostramos copy SOLO cuando está abierto / publicado / aprobado
-      const showCopy = !status || ['Publicado', 'Aprobado', 'Scheduled', 'Entregado'].includes(pageStatus || '');
-
-      rows.push({
-        id: page.id,
-        title,
-        client: clientName,
-        project: projectName,
-        owner: pageOwner || null,
-        status: pageStatus || null,
-        date,
-        medias,
-        preview,
-        previewLabel,
-        showCopy,
+      enriched.push({
+        ...row,
+        files,
+        cover,
       });
     }
-
-    // ordenamos por fecha descendente
-    rows.sort((a, b) => {
-      const da = a.date?.raw ? new Date(a.date.raw).getTime() : 0;
-      const db = b.date?.raw ? new Date(b.date.raw).getTime() : 0;
-      return db - da;
-    });
-
-    res.status(200).json({ rows });
-  } catch (err) {
-    console.error('grid error', err);
-    res.status(500).json({ error: 'grid failed' });
+    res.json({ ok: true, rows: enriched });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e?.message || 'grid failed' });
   }
 }
