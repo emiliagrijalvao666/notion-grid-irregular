@@ -68,3 +68,24 @@ html,body{margin:0;background:#fff;color:var(--ink);font:14px/1.4 system-ui,-app
 .viewer__dots{font-size:12px;color:#666}
 .nav{border:0;background:#111;color:#fff;border-radius:20px;padding:6px 10px;cursor:pointer}
 .viewer__copy{margin-top:10px;font-size:14px;color:#222}
+/* ocultar filtros cuando el engranaje los esconde */
+.filters--hidden{
+  display:none;
+}
+
+/* botón engranaje, estilo simple como los demás */
+.btn--gear{
+  border:0;
+  border-radius:999px;
+  padding:6px 8px;
+  margin-right:8px;
+  background:var(--chip);
+  color:var(--chip-ink);
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  cursor:pointer;
+}
+.btn--gear svg{
+  display:block;
+}
