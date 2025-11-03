@@ -1,9 +1,15 @@
 // /api/schema.js
-export const CONTENT_DB_ID = process.env.NOTION_DB_ID;          // posts
-export const PROJECTS_DB_ID = process.env.NOTION_DB_PROJECTS;   // projects
-export const CLIENTS_DB_ID  = process.env.NOTION_DB_CLIENTS;    // clients
 
-// esto es LO QUE YA TENÍAS en el dump que me pasaste:
+// compat con tu Vercel: tú tienes NOTION_DB_ID, NOTION_DB_CLIENTS, NOTION_DB_PROJECTS
+// y además tienes NOTION_DATABASE_ID. Dejamos fallback.
+export const CONTENT_DB_ID =
+  process.env.NOTION_DB_ID ||
+  process.env.NOTION_DATABASE_ID;
+
+export const CLIENTS_DB_ID = process.env.NOTION_DB_CLIENTS;
+export const PROJECTS_DB_ID = process.env.NOTION_DB_PROJECTS;
+
+// este es TU esquema real (el que vimos en el dump)
 export const contentSchema = {
   title: 'Post',
   date: 'Publish Date',
@@ -11,14 +17,13 @@ export const contentSchema = {
   status: 'Status',
   platforms: 'Platform',
 
-  // archivos / medias
-  files: ['Link', 'Canva', 'Attachment'],
+  // aquí declaramos qué props pueden traer media
+  files: ['Attachment', 'Link', 'Canva'],
 
-  // relaciones
+  // en TU base la relación que sí está llena es "Client" y "Project"
   clientRel: 'Client',
-  projectRel: 'Project',           // 👈 OJO: aquí usamos "Project" porque es la que tú usas y SÍ está llena
-  // si algún día vuelves a usar “PostProject” lo activamos de nuevo
+  projectRel: 'Project',
 };
 
-// helpers para nombres que mostramos en filtros
-export const FILTER_LIMIT = 200;
+// para paginaciones pequeñas
+export const PAGE_SIZE = 200;
