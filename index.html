@@ -12,7 +12,8 @@
     <div class="toolbar">
       <div class="left">
         <button id="btnRefresh" class="btn btn--refresh">Refresh</button>
-        <!-- ⚙️ botón engranaje, mismo bloque que Refresh -->
+
+        <!-- ⚙️ botón engranaje minimal -->
         <button
           id="btnGear"
           class="btn btn--gear"
@@ -20,10 +21,27 @@
           aria-expanded="true"
           type="button"
         >
-          <!-- icono minimal usando tu PNG -->
-          <img src="./layers.png" alt="" aria-hidden="true" />
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
+            <path
+              d="M19.6224 10.3954L18.5247 7.7448L20 6L18 4L16.2647 5.48295L13.5578 4.36974L12.9353 2H10.981L10.3491 4.40113L7.70441 5.51596L6 4L4 6L5.45337 7.78885L4.3725 10.4463L2 11V13L4.40111 13.6555L5.51575 16.2997L4 18L6 20L7.79116 18.5403L10.397 19.6123L11 22H13L13.6045 19.6132L16.2551 18.5155C16.6969 18.8313 18 20 18 20L20 18L18.5159 16.2494L19.6139 13.598L21.9999 12.9772L22 11L19.6224 10.3954Z"
+              stroke="currentColor"
+              stroke-width="1.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              fill="none"
+            />
+          </svg>
         </button>
       </div>
+
       <div class="right">
         <button id="btnClear" class="btn btn--ghost">
           Clear filters <span id="badgeCount" class="badge" hidden>0</span>
@@ -33,27 +51,37 @@
 
     <div class="filters" id="filters">
       <div class="select">
-        <button class="select__btn" id="fClient" aria-haspopup="listbox" aria-expanded="false">All Clients</button>
+        <button class="select__btn" id="fClient" aria-haspopup="listbox" aria-expanded="false">
+          All Clients
+        </button>
         <div class="select__menu" id="mClient" role="listbox" aria-labelledby="fClient"></div>
       </div>
 
       <div class="select">
-        <button class="select__btn" id="fProject" aria-haspopup="listbox" aria-expanded="false">All Projects</button>
+        <button class="select__btn" id="fProject" aria-haspopup="listbox" aria-expanded="false">
+          All Projects
+        </button>
         <div class="select__menu" id="mProject" role="listbox" aria-labelledby="fProject"></div>
       </div>
 
       <div class="select">
-        <button class="select__btn" id="fPlatform" aria-haspopup="listbox" aria-expanded="false">All Platforms</button>
+        <button class="select__btn" id="fPlatform" aria-haspopup="listbox" aria-expanded="false">
+          All Platforms
+        </button>
         <div class="select__menu" id="mPlatform" role="listbox" aria-labelledby="fPlatform"></div>
       </div>
 
       <div class="select">
-        <button class="select__btn" id="fOwner" aria-haspopup="listbox" aria-expanded="false">All Owners</button>
+        <button class="select__btn" id="fOwner" aria-haspopup="listbox" aria-expanded="false">
+          All Owners
+        </button>
         <div class="select__menu" id="mOwner" role="listbox" aria-labelledby="fOwner"></div>
       </div>
 
       <div class="select">
-        <button class="select__btn" id="fStatus" aria-haspopup="listbox" aria-expanded="false">All Status</button>
+        <button class="select__btn" id="fStatus" aria-haspopup="listbox" aria-expanded="false">
+          All Status
+        </button>
         <div class="select__menu" id="mStatus" role="listbox" aria-labelledby="fStatus"></div>
       </div>
     </div>
