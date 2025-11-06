@@ -222,7 +222,7 @@ html,body{
   gap:6px;
 }
 
-/* AHORA: iconos minimal sin fondo */
+/* iconos minimal sin fondo */
 .badge-ico{
   background:none;
   color:#fff;
@@ -235,8 +235,8 @@ html,body{
 }
 
 .badge-ico svg{
-  width:20px;
-  height:20px;
+  width:18px;   /* tamaño unificado */
+  height:18px;
   fill:#fff;
   display:block;
 }
@@ -396,5 +396,5 @@ html,body{
 .viewer__copy{
   margin-top:10px;
   font-size:14px;
-  color:#fff; /* ahora la copy sale en blanco */
+  color:#fff; /* copy en blanco */
 }
