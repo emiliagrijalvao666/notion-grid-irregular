@@ -33,7 +33,7 @@ const els = {
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
 
-  // ⚙️ botón engranaje
+  // ⚙️ nuevo: botón engranaje
   gear: document.getElementById('btnGear'),
 };
 
@@ -100,7 +100,7 @@ async function init() {
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
 
-  // ⚙️ wire engranaje (mostrar/ocultar filtros)
+  // ⚙️ wire del engranaje (mostrar/ocultar filtros)
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
   }
@@ -520,20 +520,20 @@ function renderGrid(list) {
   hookCardEvents();
 }
 
-/* === renderCard con iconos minimal y prioridad tipo IG === */
+/* === renderCard con prioridad IG & pin a la derecha === */
 function renderCard(p) {
   const first = p.media && p.media[0];
   const hasMulti = (p.media?.length || 0) > 1;
-  const isVideo = !hasMulti && first && first.type === 'video'; // video solo si NO hay carrusel
+  const isVideo = !hasMulti && first && first.type === 'video';
   const isExternal = first && first.type === 'external';
 
   const ownerBadge = ownerSquare(p.owner);
 
   const badges = `
     <div class="card__badges">
-      ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
       ${hasMulti ? `<span class="badge-ico" title="Carousel">${svgCarousel()}</span>` : ``}
       ${!hasMulti && isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
+      ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
     </div>
   `;
 
