@@ -110,7 +110,8 @@ export default async function handler(req,res){
       start_cursor: cursor,
       page_size: pageSize,
       filter,
-      sorts: buildSorts(meta, dateKey),
+      // ⬇️ aquí ahora pasamos también pinnedKey
+      sorts: buildSorts(meta, dateKey, pinnedKey),
     });
 
     const posts = resp.results.map(page =>
@@ -158,8 +159,23 @@ function firstExisting(meta, candidates, type){
   return undefined;
 }
 
-function buildSorts(meta, dateKey){
-  if(dateKey) return [{ property:dateKey, direction:'descending' }];
+// 🔁 Orden backend: Pinned primero, luego fecha desc, si no hay nada → created_time
+function buildSorts(meta, dateKey, pinnedKey){
+  const sorts = [];
+
+  if (pinnedKey){
+    // checkbox: true > false si ordenamos 'descending'
+    sorts.push({ property: pinnedKey, direction:'descending' });
+  }
+
+  if (dateKey){
+    sorts.push({ property: dateKey, direction:'descending' });
+  }
+
+  if (sorts.length){
+    return sorts;
+  }
+
   return [{ timestamp:'created_time', direction:'descending' }];
 }
 
