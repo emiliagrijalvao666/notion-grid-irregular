@@ -1,5 +1,5 @@
 :root{
-  --wrap: 679px;
+  --wrap: 790px; /* ancho aprox 780–800px para el widget */
   --gap: 1px;
   --bg:#f6f6f6; --ink:#0b0b0b; --muted:#8a8a8a;
   --chip:#efefef; --chip-ink:#222;
