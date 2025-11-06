@@ -392,5 +392,5 @@ html,body{
 .viewer__copy{
   margin-top:10px;
   font-size:14px;
-  color:#222;
+  color:#fff; /* ahora la copy sale en blanco */
 }
