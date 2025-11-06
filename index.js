@@ -33,7 +33,7 @@ const els = {
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
 
-  // ⚙️ nuevo: botón engranaje
+  // ⚙️ botón engranaje
   gear: document.getElementById('btnGear'),
 };
 
@@ -684,17 +684,29 @@ function moveModal(step) {
   renderModal();
 }
 
-/* === renderModal: Canva/Drive/otros externos === */
+/* === renderModal: video sin autoplay, pero con hover play === */
 function renderModal() {
   const a = state.modal.assets[state.modal.index];
 
   if (a.type === 'video') {
-    els.vStage.innerHTML = `<video controls playsinline src="${escapeHtml(
+    // SIN autoplay ni muted: se abre normal, con audio, y se reproduce sólo al hover
+    els.vStage.innerHTML = `<video class="viewer__video" controls playsinline src="${escapeHtml(
       a.url
     )}" style="max-width:100%;max-height:60vh;object-fit:contain"></video>`;
+
+    const vid = els.vStage.querySelector('.viewer__video');
+    if (vid) {
+      vid.addEventListener('mouseenter', () => {
+        vid.play().catch(() => {});
+      });
+      vid.addEventListener('mouseleave', () => {
+        try {
+          vid.pause();
+        } catch {}
+      });
+    }
   } else if (a.type === 'external') {
     if (a.provider === 'canva') {
-      // Canva igual que antes
       els.vStage.innerHTML = `
         <div style="width:100%;display:flex;flex-direction:column;gap:8px;align-items:center">
           <iframe src="${escapeHtml(
@@ -703,13 +715,8 @@ function renderModal() {
           <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener" class="btn" style="text-decoration:none">Open in Canva</a>
         </div>`;
     } else {
-      // 🔥 Drive → autoplay=1 & mute=1
-      let src = a.url || '';
-      if (a.provider === 'drive' && src) {
-        src += src.includes('?') ? '&autoplay=1&mute=1' : '?autoplay=1&mute=1';
-      }
       els.vStage.innerHTML = `<iframe src="${escapeHtml(
-        src
+        a.url
       )}" style="width:100%;min-height:60vh;border:0;" allow="autoplay; encrypted-media"></iframe>`;
     }
   } else {
