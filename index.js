@@ -534,7 +534,6 @@ function renderCard(p) {
       ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
       ${isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
       ${hasMulti ? `<span class="badge-ico" title="Carousel">${svgCarousel()}</span>` : ``}
-      ${hasMulti ? `<span class="badge-ico badge-ico__count" title="Items">${p.media.length}</span>` : ``}
     </div>
   `;
 
@@ -831,14 +830,34 @@ function ownerColor(name) {
 }
 
 /* ----- Icons ----- */
+
+/* Pin / Pinned */
 function svgPin() {
-  return `<svg viewBox="0 0 24 24"><path d="M14 3l7 7-4 1-3 7-2-2-2-2 7-3 1-4-4-4z"/></svg>`;
+  return `
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14.5 2H5.5V3.5H6.5V10L4.5 12V13.5H9.25V18.5H10.75V13.5H15.5V12L13.5 10V3.5H14.5V2Z" fill="white"/>
+    </svg>
+  `;
 }
+
+/* Video / Play */
 function svgVideo() {
-  return `<svg viewBox="0 0 24 24"><path d="M17 10l4-2v8l-4-2v2H3V8h14v2z"/></svg>`;
+  return `
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M8 5.5V18.5L17.5 12L8 5.5Z" fill="white" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+    </svg>
+  `;
 }
+
+/* Carrusel (múltiples imágenes, estilo IG capas) */
 function svgCarousel() {
-  return `<svg viewBox="0 0 24 24"><path d="M3 7h14v10H3zM19 9h2v6h-2z"/></svg>`;
+  return `
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17 4H7C5.89543 4 5 4.89543 5 6V16C5 17.1046 5.89543 18 7 18H17C18.1046 18 19 17.1046 19 16V6C19 4.89543 18.1046 4 17 4Z" stroke="white" stroke-width="1.5" fill="none"/>
+      <path d="M5 4H3C1.89543 4 1 4.89543 1 6V8" stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
+      <circle cx="12" cy="11" r="3" stroke="white" stroke-width="1.5" fill="none"/>
+    </svg>
+  `;
 }
 
 /* =========================
