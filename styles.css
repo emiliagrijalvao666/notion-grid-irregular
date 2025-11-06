@@ -81,7 +81,8 @@ html,body{
   justify-content:center;
 }
 
-.btn--gear svg{
+.btn--gear svg,
+.btn--gear img{
   width:16px;
   height:16px;
   display:block;
@@ -212,7 +213,7 @@ html,body{
   padding:12px;
 }
 
-/* badges */
+/* badges (iconos arriba derecha) */
 .card__badges{
   position:absolute;
   top:6px;
@@ -221,23 +222,28 @@ html,body{
   gap:6px;
 }
 
-/* iconos minimalistas: sin fondo, todos 20x20 */
+/* AHORA: iconos minimal sin fondo */
 .badge-ico{
+  background:none;
   color:#fff;
+  padding:0;
+  border:0;
+  font-size:0;
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  padding:0;
 }
 
 .badge-ico svg{
   width:20px;
   height:20px;
+  fill:#fff;
   display:block;
 }
 
-/* ya no usamos numerito separado, pero dejamos la clase por si acaso */
+/* ya no usamos numerito, pero lo dejamos por si acaso */
 .badge-ico__count{
+  border-radius:10px;
   font-weight:700;
 }
 
