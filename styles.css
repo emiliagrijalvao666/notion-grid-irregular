@@ -69,20 +69,19 @@ html,body{
 /* -------- Engranaje (mostrar/ocultar filtros) -------- */
 
 .btn--gear{
-  background:#fff;
-  color:#111;
+  background:#fff;        /* círculo blanco */
+  color:#000;             /* icono negro (currentColor) */
   border-radius:18px;
-  border:1px solid #2563eb; /* azul tipo Notion */
+  border:1px solid #000;  /* borde negro, nada azul */
   padding:0;
-  width:36px;               /* misma altura visual que Refresh */
+  width:36px;             /* misma altura visual que Refresh */
   height:36px;
   display:flex;
   align-items:center;
   justify-content:center;
 }
 
-.btn--gear svg,
-.btn--gear img{
+.btn--gear svg{
   width:16px;
   height:16px;
   display:block;
@@ -213,7 +212,7 @@ html,body{
   padding:12px;
 }
 
-/* badges (iconos arriba derecha) */
+/* badges (pin / video / carrusel) */
 .card__badges{
   position:absolute;
   top:6px;
@@ -222,12 +221,12 @@ html,body{
   gap:6px;
 }
 
-/* iconos minimal sin fondo */
+/* iconos minimal blancos, sin fondo */
 .badge-ico{
-  background:none;
+  background:transparent;
   color:#fff;
+  border-radius:0;
   padding:0;
-  border:0;
   font-size:0;
   display:inline-flex;
   align-items:center;
@@ -235,16 +234,17 @@ html,body{
 }
 
 .badge-ico svg{
-  width:18px;   /* tamaño unificado */
-  height:18px;
-  fill:#fff;
+  width:20px;
+  height:20px;
   display:block;
+  fill:#fff;
 }
 
-/* ya no usamos numerito, pero lo dejamos por si acaso */
+/* por si algún día usamos numerito, pero sin pill */
 .badge-ico__count{
-  border-radius:10px;
-  font-weight:700;
+  font-size:11px;
+  padding-left:2px;
+  color:#fff;
 }
 
 /* owner cuadrito */
@@ -396,5 +396,5 @@ html,body{
 .viewer__copy{
   margin-top:10px;
   font-size:14px;
-  color:#fff; /* copy en blanco */
+  color:#fff; /* copy en blanco sobre fondo oscuro */
 }
