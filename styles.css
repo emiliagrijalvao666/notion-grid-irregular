@@ -221,25 +221,23 @@ html,body{
   gap:6px;
 }
 
+/* iconos minimalistas: sin fondo, todos 20x20 */
 .badge-ico{
-  background:rgba(0,0,0,.65);
   color:#fff;
-  border-radius:10px;
-  padding:3px 6px;
-  font-size:12px;
   display:inline-flex;
   align-items:center;
   justify-content:center;
+  padding:0;
 }
 
 .badge-ico svg{
-  width:14px;
-  height:14px;
-  fill:#fff;
+  width:20px;
+  height:20px;
+  display:block;
 }
 
+/* ya no usamos numerito separado, pero dejamos la clase por si acaso */
 .badge-ico__count{
-  border-radius:10px;
   font-weight:700;
 }
 
