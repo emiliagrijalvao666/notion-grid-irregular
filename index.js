@@ -33,7 +33,7 @@ const els = {
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
 
-  // ⚙️ nuevo: botón engranaje
+  // ⚙️ botón engranaje
   gear: document.getElementById('btnGear'),
 };
 
@@ -100,7 +100,7 @@ async function init() {
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
 
-  // ⚙️ wire del engranaje (mostrar/ocultar filtros)
+  // ⚙️ wire engranaje (mostrar/ocultar filtros)
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
   }
@@ -520,26 +520,26 @@ function renderGrid(list) {
   hookCardEvents();
 }
 
-/* === renderCard con miniatura de Drive y label para otros external === */
+/* === renderCard con iconos minimal y prioridad tipo IG === */
 function renderCard(p) {
   const first = p.media && p.media[0];
-  const isVideo = first && first.type === 'video';
-  const isExternal = first && first.type === 'external';
   const hasMulti = (p.media?.length || 0) > 1;
+  const isVideo = !hasMulti && first && first.type === 'video'; // video solo si NO hay carrusel
+  const isExternal = first && first.type === 'external';
 
   const ownerBadge = ownerSquare(p.owner);
 
   const badges = `
     <div class="card__badges">
       ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
-      ${isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
       ${hasMulti ? `<span class="badge-ico" title="Carousel">${svgCarousel()}</span>` : ``}
+      ${!hasMulti && isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
     </div>
   `;
 
   let mediaEl = `<div class="placeholder">No content</div>`;
   if (first) {
-    if (isVideo) {
+    if (first.type === 'video') {
       mediaEl = `<video class="card__media" preload="metadata" muted playsinline src="${escapeHtml(
         first.url
       )}"></video>`;
@@ -829,9 +829,7 @@ function ownerColor(name) {
   return OWNER_COLORS[Math.abs(h) % OWNER_COLORS.length];
 }
 
-/* ----- Icons ----- */
-
-/* Pin / Pinned */
+/* ----- Icons minimal blancos ----- */
 function svgPin() {
   return `
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -840,22 +838,20 @@ function svgPin() {
   `;
 }
 
-/* Video / Play */
 function svgVideo() {
   return `
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M8 5.5V18.5L17.5 12L8 5.5Z" fill="white" stroke="white" stroke-width="1.5" stroke-linejoin="round"/>
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M7 5V15L15 10L7 5Z" fill="white"/>
     </svg>
   `;
 }
 
-/* Carrusel (múltiples imágenes, estilo IG capas) */
 function svgCarousel() {
   return `
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M17 4H7C5.89543 4 5 4.89543 5 6V16C5 17.1046 5.89543 18 7 18H17C18.1046 18 19 17.1046 19 16V6C19 4.89543 18.1046 4 17 4Z" stroke="white" stroke-width="1.5" fill="none"/>
-      <path d="M5 4H3C1.89543 4 1 4.89543 1 6V8" stroke="white" stroke-width="1.5" stroke-linecap="round" fill="none"/>
-      <circle cx="12" cy="11" r="3" stroke="white" stroke-width="1.5" fill="none"/>
+      <rect x="4" y="6" width="9" height="9" rx="2" stroke="white" stroke-width="1.4" fill="none"/>
+      <rect x="6" y="4" width="9" height="9" rx="2" stroke="white" stroke-width="1.1" fill="none" opacity="0.75"/>
+      <rect x="8" y="2" width="9" height="9" rx="2" stroke="white" stroke-width="0.9" fill="none" opacity="0.5"/>
     </svg>
   `;
 }
