@@ -55,6 +55,10 @@ const state = {
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
+/* Estado de drag (reordenar cards solo en frontend) */
+let dragSrcIndex = null;
+let isDraggingCard = false;
+
 /* ----- Init guards (evita UI muerta) ----- */
 (function guardRequired() {
   const required = [
@@ -543,15 +547,15 @@ function mapPostShape(p) {
    ========================= */
 
 function renderGrid(list) {
-  const cards = list.map(renderCard);
+  const cards = list.map((p, index) => renderCard(p, index));
   const slots = (12 - (cards.length % 12)) % 12;
   if (list.length === 0) els.grid.innerHTML = placeholderList(12);
   else els.grid.innerHTML = cards.join('') + placeholderList(slots);
   hookCardEvents();
 }
 
-/* === renderCard con prioridad IG & pin a la derecha === */
-function renderCard(p) {
+/* === renderCard con prioridad IG & pin a la derecha + soporte drag === */
+function renderCard(p, index) {
   const first = p.media && p.media[0];
   const hasMulti = (p.media?.length || 0) > 1;
   const isVideo = !hasMulti && first && first.type === 'video';
@@ -590,7 +594,7 @@ function renderCard(p) {
   const date = p.date ? fmtDate(p.date) : '';
 
   return `
-    <div class="card" data-id="${p.id}">
+    <div class="card" data-id="${p.id}" data-index="${index}" draggable="true">
       ${ownerBadge}
       ${badges}
       ${mediaEl}
@@ -637,7 +641,56 @@ function hookCardEvents() {
         } catch {}
       });
     }
-    card.addEventListener('click', () => openModal(card.dataset.id));
+
+    // click para abrir modal, ignorando clicks que vienen de un drag
+    card.addEventListener('click', () => {
+      if (isDraggingCard) return;
+      openModal(card.dataset.id);
+    });
+
+    // Drag & drop para reordenar visualmente las cards (solo frontend)
+    card.addEventListener('dragstart', (e) => {
+      const idx = Number(card.dataset.index);
+      if (Number.isNaN(idx)) return;
+      dragSrcIndex = idx;
+      isDraggingCard = true;
+      e.dataTransfer.effectAllowed = 'move';
+      // necesario para que algunos navegadores habiliten el drag
+      e.dataTransfer.setData('text/plain', '');
+    });
+
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      if (e.dataTransfer) {
+        e.dataTransfer.dropEffect = 'move';
+      }
+    });
+
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (dragSrcIndex === null) return;
+      const targetIndex = Number(card.dataset.index);
+      if (Number.isNaN(targetIndex)) return;
+      if (dragSrcIndex === targetIndex) return;
+
+      const arr = state.posts.slice();
+      const [moved] = arr.splice(dragSrcIndex, 1);
+      arr.splice(targetIndex, 0, moved);
+      state.posts = arr;
+
+      dragSrcIndex = null;
+      isDraggingCard = false;
+
+      renderGrid(state.posts);
+    });
+
+    card.addEventListener('dragend', () => {
+      dragSrcIndex = null;
+      // pequeño timeout para evitar que el click inmediato dispare modal
+      setTimeout(() => {
+        isDraggingCard = false;
+      }, 0);
+    });
   });
 }
 
