@@ -55,6 +55,10 @@ const state = {
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
 
+/* ----- Drag & Drop (solo frontend, no Notion) ----- */
+let dragIndex = null;
+let dragJustFinished = false;
+
 /* ----- Init guards (evita UI muerta) ----- */
 (function guardRequired() {
   const required = [
@@ -616,11 +620,61 @@ function placeholderList(n) {
 }
 
 /* =========================
-   Card events
+   Card events + Drag & Drop
    ========================= */
 
 function hookCardEvents() {
-  document.querySelectorAll('.card').forEach((card) => {
+  const cards = document.querySelectorAll('.card');
+
+  cards.forEach((card, index) => {
+    // índice actual de la card en el grid
+    card.dataset.index = String(index);
+
+    // habilitar drag & drop
+    card.setAttribute('draggable', 'true');
+
+    card.addEventListener('dragstart', (e) => {
+      dragIndex = Number(card.dataset.index);
+      card.classList.add('is-dragging');
+      if (e.dataTransfer) {
+        e.dataTransfer.effectAllowed = 'move';
+        // necesario en algunos navegadores
+        e.dataTransfer.setData('text/plain', '');
+      }
+    });
+
+    card.addEventListener('dragend', () => {
+      card.classList.remove('is-dragging');
+      dragIndex = null;
+    });
+
+    card.addEventListener('dragover', (e) => {
+      if (dragIndex === null) return;
+      e.preventDefault();
+    });
+
+    card.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (dragIndex === null) return;
+
+      const toIndex = Number(card.dataset.index);
+      if (Number.isNaN(toIndex) || toIndex === dragIndex) return;
+
+      // Reordenamos el array localmente
+      const moved = state.posts.splice(dragIndex, 1)[0];
+      state.posts.splice(toIndex, 0, moved);
+
+      // Re-render del grid con el nuevo orden
+      renderGrid(state.posts);
+
+      // Marcamos que acaba de haber un drop para evitar click fantasma
+      dragJustFinished = true;
+      setTimeout(() => {
+        dragJustFinished = false;
+      }, 0);
+    });
+
+    // hover video como antes
     const vid = card.querySelector('video.card__media');
     if (vid) {
       vid.muted = true;
@@ -637,7 +691,12 @@ function hookCardEvents() {
         } catch {}
       });
     }
-    card.addEventListener('click', () => openModal(card.dataset.id));
+
+    // click para abrir modal (se cancela si justo se hizo drop)
+    card.addEventListener('click', () => {
+      if (dragJustFinished) return;
+      openModal(card.dataset.id);
+    });
   });
 }
 
