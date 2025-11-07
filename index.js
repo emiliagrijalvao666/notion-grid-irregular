@@ -33,8 +33,8 @@ const els = {
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
 
-  // ⚙️ botón engranaje
-  gear: document.getElementById('btnGear'),
+  // botón texto para filtros
+  gear: document.getElementById('btnFiltersToggle'),
 };
 
 /* ----- State ----- */
@@ -54,10 +54,6 @@ const state = {
 };
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
-
-/* ----- Drag & Drop (solo frontend, no Notion) ----- */
-let dragIndex = null;
-let dragJustFinished = false;
 
 /* ----- Init guards (evita UI muerta) ----- */
 (function guardRequired() {
@@ -107,7 +103,7 @@ async function init() {
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
 
-  // ⚙️ engranaje (mostrar/ocultar filtros)
+  // botón mostrar/ocultar filtros
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
   }
@@ -620,61 +616,11 @@ function placeholderList(n) {
 }
 
 /* =========================
-   Card events + Drag & Drop
+   Card events
    ========================= */
 
 function hookCardEvents() {
-  const cards = document.querySelectorAll('.card');
-
-  cards.forEach((card, index) => {
-    // índice actual de la card en el grid
-    card.dataset.index = String(index);
-
-    // habilitar drag & drop
-    card.setAttribute('draggable', 'true');
-
-    card.addEventListener('dragstart', (e) => {
-      dragIndex = Number(card.dataset.index);
-      card.classList.add('is-dragging');
-      if (e.dataTransfer) {
-        e.dataTransfer.effectAllowed = 'move';
-        // necesario en algunos navegadores
-        e.dataTransfer.setData('text/plain', '');
-      }
-    });
-
-    card.addEventListener('dragend', () => {
-      card.classList.remove('is-dragging');
-      dragIndex = null;
-    });
-
-    card.addEventListener('dragover', (e) => {
-      if (dragIndex === null) return;
-      e.preventDefault();
-    });
-
-    card.addEventListener('drop', (e) => {
-      e.preventDefault();
-      if (dragIndex === null) return;
-
-      const toIndex = Number(card.dataset.index);
-      if (Number.isNaN(toIndex) || toIndex === dragIndex) return;
-
-      // Reordenamos el array localmente
-      const moved = state.posts.splice(dragIndex, 1)[0];
-      state.posts.splice(toIndex, 0, moved);
-
-      // Re-render del grid con el nuevo orden
-      renderGrid(state.posts);
-
-      // Marcamos que acaba de haber un drop para evitar click fantasma
-      dragJustFinished = true;
-      setTimeout(() => {
-        dragJustFinished = false;
-      }, 0);
-    });
-
-    // hover video como antes
+  document.querySelectorAll('.card').forEach((card) => {
     const vid = card.querySelector('video.card__media');
     if (vid) {
       vid.muted = true;
@@ -691,12 +637,7 @@ function hookCardEvents() {
         } catch {}
       });
     }
-
-    // click para abrir modal (se cancela si justo se hizo drop)
-    card.addEventListener('click', () => {
-      if (dragJustFinished) return;
-      openModal(card.dataset.id);
-    });
+    card.addEventListener('click', () => openModal(card.dataset.id));
   });
 }
 
@@ -706,7 +647,8 @@ function hookCardEvents() {
 
 function wireModal() {
   els.modalClose.addEventListener('click', closeModal);
-  els.modalBackdrop.addEventListener('click', closeModal);
+  // ⛔ ya no cerramos al hacer click en el backdrop
+  // els.modalBackdrop.addEventListener('click', closeModal);
 
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeModal();
@@ -773,11 +715,10 @@ function moveModal(step) {
   renderModal();
 }
 
-/* === renderModal: tamaños coherentes (máx 800x600 / 90% viewport) === */
+/* === renderModal: tamaños coherentes (máx 800x600 / 90% viewport) + nav condicional === */
 function renderModal() {
   const a = state.modal.assets[state.modal.index];
 
-  // estilos comunes para media dentro del modal
   const mediaBoxStyle =
     'max-width:min(800px,90vw);max-height:min(600px,90vh);width:100%;height:auto;object-fit:contain;display:block;';
 
@@ -809,8 +750,19 @@ function renderModal() {
 
   const tot = state.modal.assets.length;
   const cur = state.modal.index + 1;
-  const dots = Array.from({ length: tot }, (_, i) => (i === state.modal.index ? '●' : '○')).join(' ');
-  els.vDots.textContent = tot > 1 ? `${cur}/${tot}  ${dots}` : '';
+
+  if (tot > 1) {
+    const dots = Array.from({ length: tot }, (_, i) =>
+      i === state.modal.index ? '●' : '○'
+    ).join(' ');
+    els.vDots.textContent = `${cur}/${tot}  ${dots}`;
+    if (els.vPrev) els.vPrev.style.visibility = 'visible';
+    if (els.vNext) els.vNext.style.visibility = 'visible';
+  } else {
+    els.vDots.textContent = '';
+    if (els.vPrev) els.vPrev.style.visibility = 'hidden';
+    if (els.vNext) els.vNext.style.visibility = 'hidden';
+  }
 }
 
 /* =========================
@@ -960,5 +912,5 @@ function onToggleFilters() {
   if (!els.filtersWrap || !els.gear) return;
   const hidden = els.filtersWrap.classList.toggle('filters--hidden');
   els.gear.setAttribute('aria-expanded', hidden ? 'false' : 'true');
-  els.gear.title = hidden ? 'Show filters' : 'Hide filters';
+  els.gear.textContent = hidden ? 'Show filters' : 'Hide filters';
 }
