@@ -657,7 +657,7 @@ function wireModal() {
     if (e.key === 'ArrowRight') moveModal(+1);
   });
 
-  // swipe
+  // swipe (touch)
   let sx = 0;
   els.vStage.addEventListener(
     'touchstart',
@@ -674,6 +674,30 @@ function wireModal() {
     },
     { passive: true }
   );
+
+  // 🔁 drag con mouse (desktop)
+  let isDragging = false;
+  let startX = 0;
+  let lastX = 0;
+
+  els.vStage.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    startX = lastX = e.clientX;
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isDragging) return;
+    lastX = e.clientX;
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isDragging) return;
+    const dx = lastX - startX;
+    isDragging = false;
+    if (Math.abs(dx) > 40) {
+      moveModal(dx < 0 ? +1 : -1);
+    }
+  });
 
   els.vPrev.addEventListener('click', () => moveModal(-1));
   els.vNext.addEventListener('click', () => moveModal(+1));
@@ -715,7 +739,7 @@ function moveModal(step) {
   renderModal();
 }
 
-/* === renderModal: tamaños coherentes (máx 800x600 / 90% viewport) + nav condicional === */
+/* === renderModal: tamaños coherentes + nav condicional === */
 function renderModal() {
   const a = state.modal.assets[state.modal.index];
 
