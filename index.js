@@ -35,6 +35,9 @@ const els = {
 
   // ⚙️ botón engranaje
   gear: document.getElementById('btnGear'),
+
+  // 👤 nuevo: toggle de owners
+  toggleOwners: document.getElementById('btnOwners'),
 };
 
 /* ----- State ----- */
@@ -48,6 +51,9 @@ const state = {
 
   // lock desde URL (?client=...&project=...)
   locked: { clients: [], projects: [] },
+
+  // 👤 mostrar/ocultar iniciales de owners en las cards
+  showOwners: false,
 };
 
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -81,7 +87,7 @@ const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', '
     'vNext',
     'vDots',
     'vCopy',
-    // si falta el gear no rompemos nada, solo avisamos
+    // si falta el gear o btnOwners no rompemos nada, solo avisamos
   ];
   const missing = required.filter((id) => !document.getElementById(id));
   if (missing.length) {
@@ -100,9 +106,16 @@ async function init() {
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
 
-  // ⚙️ wire del engranaje (mostrar/ocultar filtros)
+  // ⚙️ engranaje (mostrar/ocultar filtros)
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
+  }
+
+  // 👤 toggle owners
+  if (els.toggleOwners) {
+    els.toggleOwners.addEventListener('click', onToggleOwners);
+    els.toggleOwners.setAttribute('aria-pressed', 'false');
+    els.toggleOwners.textContent = 'Show owners';
   }
 
   // placeholders iniciales
@@ -527,7 +540,7 @@ function renderCard(p) {
   const isVideo = !hasMulti && first && first.type === 'video';
   const isExternal = first && first.type === 'external';
 
-  const ownerBadge = ownerSquare(p.owner);
+  const ownerBadge = state.showOwners ? ownerSquare(p.owner) : '';
 
   const badges = `
     <div class="card__badges">
@@ -684,27 +697,13 @@ function moveModal(step) {
   renderModal();
 }
 
-/* === renderModal: video sin autoplay, pero con hover play === */
+/* === renderModal: Canva/Drive en iframe y botón para Canva === */
 function renderModal() {
   const a = state.modal.assets[state.modal.index];
-
   if (a.type === 'video') {
-    // SIN autoplay ni muted: se abre normal, con audio, y se reproduce sólo al hover
-    els.vStage.innerHTML = `<video class="viewer__video" controls playsinline src="${escapeHtml(
+    els.vStage.innerHTML = `<video controls playsinline src="${escapeHtml(
       a.url
     )}" style="max-width:100%;max-height:60vh;object-fit:contain"></video>`;
-
-    const vid = els.vStage.querySelector('.viewer__video');
-    if (vid) {
-      vid.addEventListener('mouseenter', () => {
-        vid.play().catch(() => {});
-      });
-      vid.addEventListener('mouseleave', () => {
-        try {
-          vid.pause();
-        } catch {}
-      });
-    }
   } else if (a.type === 'external') {
     if (a.provider === 'canva') {
       els.vStage.innerHTML = `
@@ -879,4 +878,18 @@ function onToggleFilters() {
   const hidden = els.filtersWrap.classList.toggle('filters--hidden');
   els.gear.setAttribute('aria-expanded', hidden ? 'false' : 'true');
   els.gear.title = hidden ? 'Show filters' : 'Hide filters';
+}
+
+/* =========================
+   Owners toggle
+   ========================= */
+
+function onToggleOwners() {
+  state.showOwners = !state.showOwners;
+  if (els.toggleOwners) {
+    els.toggleOwners.setAttribute('aria-pressed', state.showOwners ? 'true' : 'false');
+    els.toggleOwners.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
+  }
+  // re-render sin recargar datos
+  renderGrid(state.posts);
 }
