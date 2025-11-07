@@ -344,6 +344,7 @@ html,body{
 .modal__panel .viewer{
   max-width:min(920px,90vw);
   width:100%;
+  position:relative;       /* necesario para overlays (flechas + dots) */
 }
 
 .modal__close{
@@ -384,26 +385,37 @@ html,body{
   display:block;
 }
 
+/* NAV y DOTS como overlay sobre la imagen */
 .viewer__nav{
+  position:absolute;
+  inset:0;
   display:flex;
   align-items:center;
-  justify-content:center;
-  gap:12px;
-  margin-top:8px;
+  justify-content:space-between;  /* flecha izq / flecha der */
+  padding:0 16px;
+  pointer-events:none;            /* contenedor no bloquea clicks */
 }
 
-.viewer__dots{
-  font-size:12px;
-  color:#fff; /* números y círculos en blanco */
-}
-
+/* flechas: activas y centradas lateralmente */
 .nav{
+  pointer-events:auto;            /* pero los botones sí capturan click */
   border:0;
   background:#111;
   color:#fff;
   border-radius:20px;
   padding:6px 10px;
   cursor:pointer;
+}
+
+/* números + circulitos arriba y centrados */
+.viewer__dots{
+  position:absolute;
+  top:12px;
+  left:50%;
+  transform:translateX(-50%);
+  font-size:12px;
+  color:#fff;                     /* números y círculos en blanco */
+  pointer-events:none;
 }
 
 /* COPY del post: centrado y alineado con el modal */
