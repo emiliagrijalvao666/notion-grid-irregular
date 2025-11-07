@@ -33,7 +33,7 @@ const els = {
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
 
-  // ⚙️ nuevo: botón engranaje
+  // ⚙️ botón engranaje
   gear: document.getElementById('btnGear'),
 };
 
@@ -108,7 +108,7 @@ async function init() {
     els.gear.addEventListener('click', onToggleFilters);
   }
 
-  // 👤 crear botón dinámico para toggle de Owners
+  // 👤 configurar botón de toggle para Owners
   setupOwnersToggle();
 
   // placeholders iniciales
@@ -132,10 +132,19 @@ function setupOwnersToggle() {
   const right = document.querySelector('.toolbar .right');
   if (!right) return;
 
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.id = 'btnOwners';
-  btn.className = 'btn btn--ghost';
+  // Si ya existe en el HTML, solo lo "enganchamos"
+  let btn = document.getElementById('btnOwners');
+
+  if (!btn) {
+    btn = document.createElement('button');
+    btn.type = 'button';
+    btn.id = 'btnOwners';
+    btn.className = 'btn btn--ghost';
+    right.insertBefore(btn, els.clear || null);
+  }
+
+  // aseguramos texto y aria
+  btn.classList.add('btn', 'btn--ghost');
   btn.textContent = 'Show owners';
   btn.setAttribute('aria-pressed', 'false');
 
@@ -146,13 +155,6 @@ function setupOwnersToggle() {
     // re-render del grid (sin recargar datos)
     renderGrid(state.posts);
   });
-
-  const clearBtn = document.getElementById('btnClear');
-  if (clearBtn && clearBtn.parentElement === right) {
-    right.insertBefore(btn, clearBtn);
-  } else {
-    right.appendChild(btn);
-  }
 }
 
 /* =========================
@@ -214,7 +216,7 @@ async function loadFilters() {
     });
     renderMenu(
       els.mStatus,
-      state.filtersData.statuses,
+      state.filtersData.statuses, 
       'statuses',
       (it) => it.name,
       (it) => it.name,
@@ -867,15 +869,31 @@ function ownerColor(name) {
   return OWNER_COLORS[Math.abs(h) % OWNER_COLORS.length];
 }
 
-/* ----- Icons ----- */
+/* ----- Icons minimal blancos (sin cambios de diseño) ----- */
 function svgPin() {
-  return `<svg viewBox="0 0 24 24"><path d="M14 3l7 7-4 1-3 7-2-2-2-2 7-3 1-4-4-4z"/></svg>`;
+  return `
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M14.5 2H5.5V3.5H6.5V10L4.5 12V13.5H9.25V18.5H10.75V13.5H15.5V12L13.5 10V3.5H14.5V2Z" fill="white"/>
+    </svg>
+  `;
 }
+
 function svgVideo() {
-  return `<svg viewBox="0 0 24 24"><path d="M17 10l4-2v8l-4-2v2H3V8h14v2z"/></svg>`;
+  return `
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <path d="M7 5V15L15 10L7 5Z" fill="white"/>
+    </svg>
+  `;
 }
+
 function svgCarousel() {
-  return `<svg viewBox="0 0 24 24"><path d="M3 7h14v10H3zM19 9h2v6h-2z"/></svg>`;
+  return `
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="4" y="6" width="9" height="9" rx="2" stroke="white" stroke-width="1.4" fill="none"/>
+      <rect x="6" y="4" width="9" height="9" rx="2" stroke="white" stroke-width="1.1" fill="none" opacity="0.75"/>
+      <rect x="8" y="2" width="9" height="9" rx="2" stroke="white" stroke-width="0.9" fill="none" opacity="0.5"/>
+    </svg>
+  `;
 }
 
 /* =========================
