@@ -12,7 +12,7 @@
     <div class="toolbar">
       <div class="left">
         <button id="btnRefresh" class="btn btn--refresh">Refresh</button>
-        <!-- ⚙️ botón engranaje, mismo bloque que Refresh -->
+        <!-- ⚙️ botón engranaje -->
         <button
           id="btnGear"
           class="btn btn--gear"
@@ -21,21 +21,13 @@
           type="button"
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
-            <path d="M12 8.5A3.5 3.5 0 1 0 15.5 12 3.5 3.5 0 0 0 12 8.5zm9 2.88-1.83-.3a7.28 7.28 0 0 0-.72-1.73l1.08-1.53a.75.75 0 0 0-.09-.96l-1.5-1.5a.75.75 0 0 0-.96-.09l-1.53 1.08a7.28 7.28 0 0 0-1.73-.72L13.38 3a.75.75 0 0 0-.74-.6h-2.3a.75.75 0 0 0-.74.6l-.3 1.83a7.28 7.28 0 0 0-1.73.72L5.04 4.47a.75.75 0 0 0-.96.09l-1.5 1.5a.75.75 0 0 0-.09.96l1.08 1.53a7.28 7.28 0 0 0-.72 1.73L1 11.38a.75.75 0 0 0-.6.74v2.3a.75.75 0 0 0 .6.74l1.83.3a7.28 7.28 0 0 0 .72 1.73l-1.08 1.53a.75.75 0 0 0 .09.96l1.5 1.5a.75.75 0 0 0 .96.09l1.53-1.08a7.28 7.28 0 0 0 1.73.72l.3 1.83a.75.75 0 0 0 .74.6h2.3a.75.75 0 0 0 .74-.6l.3-1.83a7.28 7.28 0 0 0 1.73-.72l1.53 1.08a.75.75 0 0 0 .96-.09l1.5-1.5a.75.75 0 0 0 .09-.96l-1.08-1.53a7.28 7.28 0 0 0 .72-1.73l1.83-.3a.75.75 0 0 0 .6-.74v-2.3a.75.75 0 0 0-.6-.74z"/>
+            <path d="M12 15C13.6569 15 15 13.6569 15 12C15 10.3431 13.6569 9 12 9C10.3431 9 9 10.3431 9 12C9 13.6569 10.3431 15 12 15Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <path d="M19.6224 10.3954L18.5247 7.7448L20 6L18 4L16.2647 5.48295L13.5578 4.36974L12.9353 2H10.981L10.3491 4.40113L7.70441 5.51596L6 4L4 6L5.45337 7.78885L4.3725 10.4463L2 11V13L4.40111 13.6555L5.51575 16.2997L4 18L6 20L7.79116 18.5403L10.397 19.6123L11 22H13L13.6045 19.6132L16.2551 18.5155C16.6969 18.8313 18 20 18 20L20 18L18.5159 16.2494L19.6139 13.598L21.9999 12.9772L22 11L19.6224 10.3954Z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </button>
       </div>
       <div class="right">
-        <!-- 🔘 nuevo: toggle de iniciales de Owners -->
-        <button
-          id="btnOwners"
-          class="btn btn--ghost"
-          type="button"
-          aria-pressed="false"
-        >
-          Show owners
-        </button>
-
+        <button id="btnToggleOwners" class="btn btn--ghost">Show owners</button>
         <button id="btnClear" class="btn btn--ghost">
           Clear filters <span id="badgeCount" class="badge" hidden>0</span>
         </button>
