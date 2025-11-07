@@ -67,7 +67,7 @@ html,body{
 }
 
 /* -------- Engranaje (mostrar/ocultar filtros) -------- */
-
+/* (se queda por compatibilidad aunque ya no usamos el icono) */
 .btn--gear{
   background:#fff;        /* círculo blanco */
   color:#000;             /* icono negro (currentColor) */
@@ -382,7 +382,7 @@ html,body{
 
 .viewer__dots{
   font-size:12px;
-  color:#666;
+  color:#fff; /* ahora números y círculos en blanco */
 }
 
 .nav{
