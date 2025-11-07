@@ -47,7 +47,13 @@ export default async function handler(req,res){
     const titleKey    = firstExisting(meta, TITLE_CANDS,    'title');
     const dateKey     = firstExisting(meta, DATE_CANDS,     'date');
     const ownerKey    = firstExisting(meta, OWNER_CANDS,    'people');
-    const statusKey   = firstExisting(meta, STATUS_CANDS,   'select');
+
+    // Status puede ser "status" o "select"
+    const statusKeyStatus = firstExisting(meta, STATUS_CANDS, 'status');
+    const statusKeySelect = firstExisting(meta, STATUS_CANDS, 'select');
+    const statusKey       = statusKeyStatus || statusKeySelect;
+    const statusType      = statusKeyStatus ? 'status' : (statusKeySelect ? 'select' : null);
+
     const platformKey = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
     const pinnedKey   = firstExisting(meta, PINNED_CANDS,   'checkbox');
     const hideKey     = firstExisting(meta, HIDE_CANDS,     'checkbox');
@@ -64,7 +70,12 @@ export default async function handler(req,res){
     }
 
     if(statusKey && sel.statuses.length===1){
-      and.push({ property: statusKey, select:{ equals: sel.statuses[0] }});
+      const eq = sel.statuses[0];
+      if (statusType === 'status'){
+        and.push({ property: statusKey, status:{ equals:eq }});
+      } else {
+        and.push({ property: statusKey, select:{ equals:eq }});
+      }
     }
 
     if(platformKey && sel.platforms.length){
@@ -110,7 +121,7 @@ export default async function handler(req,res){
       start_cursor: cursor,
       page_size: pageSize,
       filter,
-      // ⬇️ aquí ahora pasamos también pinnedKey
+      // Orden: Pinned primero, luego fecha desc, si no → created_time
       sorts: buildSorts(meta, dateKey, pinnedKey),
     });
 
@@ -159,12 +170,12 @@ function firstExisting(meta, candidates, type){
   return undefined;
 }
 
-// 🔁 Orden backend: Pinned primero, luego fecha desc, si no hay nada → created_time
+// Orden backend: Pinned primero, luego fecha desc, si no hay nada → created_time
 function buildSorts(meta, dateKey, pinnedKey){
   const sorts = [];
 
   if (pinnedKey){
-    // checkbox: true > false si ordenamos 'descending'
+    // checkbox: true > false con direction:'descending'
     sorts.push({ property: pinnedKey, direction:'descending' });
   }
 
