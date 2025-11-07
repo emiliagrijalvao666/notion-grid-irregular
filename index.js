@@ -35,6 +35,9 @@ const els = {
 
   // ⚙️ botón engranaje
   gear: document.getElementById('btnGear'),
+
+  // 👤 toggle owners
+  toggleOwners: document.getElementById('btnToggleOwners'),
 };
 
 /* ----- State ----- */
@@ -49,7 +52,7 @@ const state = {
   // lock desde URL (?client=...&project=...)
   locked: { clients: [], projects: [] },
 
-  // 👤 toggle para mostrar/ocultar iniciales de owners en las cards
+  // mostrar/ocultar iniciales en cards
   showOwners: false,
 };
 
@@ -84,7 +87,7 @@ const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', '
     'vNext',
     'vDots',
     'vCopy',
-    // si falta el gear no rompemos nada, solo avisamos
+    // si falta el gear o el toggle no rompemos nada, solo avisamos
   ];
   const missing = required.filter((id) => !document.getElementById(id));
   if (missing.length) {
@@ -103,13 +106,16 @@ async function init() {
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
 
-  // ⚙️ wire del engranaje (mostrar/ocultar filtros)
+  // ⚙️ engranaje (mostrar/ocultar filtros)
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
   }
 
-  // 👤 configurar botón de toggle para Owners
-  setupOwnersToggle();
+  // 👤 toggle owners
+  if (els.toggleOwners) {
+    els.toggleOwners.addEventListener('click', onToggleOwners);
+    updateOwnersToggleLabel();
+  }
 
   // placeholders iniciales
   if (els.grid) els.grid.innerHTML = placeholderList(12);
@@ -122,39 +128,6 @@ async function init() {
 
   // 3) primer refresh
   await refresh(true);
-}
-
-/* =========================
-   Owners toggle (solo cards)
-   ========================= */
-
-function setupOwnersToggle() {
-  const right = document.querySelector('.toolbar .right');
-  if (!right) return;
-
-  // Si ya existe en el HTML, solo lo "enganchamos"
-  let btn = document.getElementById('btnOwners');
-
-  if (!btn) {
-    btn = document.createElement('button');
-    btn.type = 'button';
-    btn.id = 'btnOwners';
-    btn.className = 'btn btn--ghost';
-    right.insertBefore(btn, els.clear || null);
-  }
-
-  // aseguramos texto y aria
-  btn.classList.add('btn', 'btn--ghost');
-  btn.textContent = 'Show owners';
-  btn.setAttribute('aria-pressed', 'false');
-
-  btn.addEventListener('click', () => {
-    state.showOwners = !state.showOwners;
-    btn.setAttribute('aria-pressed', state.showOwners ? 'true' : 'false');
-    btn.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
-    // re-render del grid (sin recargar datos)
-    renderGrid(state.posts);
-  });
 }
 
 /* =========================
@@ -216,7 +189,7 @@ async function loadFilters() {
     });
     renderMenu(
       els.mStatus,
-      state.filtersData.statuses, 
+      state.filtersData.statuses,
       'statuses',
       (it) => it.name,
       (it) => it.name,
@@ -562,24 +535,23 @@ function renderGrid(list) {
 /* === renderCard con miniatura de Drive y label para otros external === */
 function renderCard(p) {
   const first = p.media && p.media[0];
-  const isVideo = first && first.type === 'video';
-  const isExternal = first && first.type === 'external';
   const hasMulti = (p.media?.length || 0) > 1;
+  const isVideo = !hasMulti && first && first.type === 'video';
+  const isExternal = first && first.type === 'external';
 
   const ownerBadge = state.showOwners ? ownerSquare(p.owner) : '';
 
   const badges = `
     <div class="card__badges">
-      ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
-      ${isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
       ${hasMulti ? `<span class="badge-ico" title="Carousel">${svgCarousel()}</span>` : ``}
-      ${hasMulti ? `<span class="badge-ico badge-ico__count" title="Items">${p.media.length}</span>` : ``}
+      ${!hasMulti && isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
+      ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
     </div>
   `;
 
   let mediaEl = `<div class="placeholder">No content</div>`;
   if (first) {
-    if (isVideo) {
+    if (first.type === 'video') {
       mediaEl = `<video class="card__media" preload="metadata" muted playsinline src="${escapeHtml(
         first.url
       )}"></video>`;
@@ -869,7 +841,7 @@ function ownerColor(name) {
   return OWNER_COLORS[Math.abs(h) % OWNER_COLORS.length];
 }
 
-/* ----- Icons minimal blancos (sin cambios de diseño) ----- */
+/* ----- Icons minimal blancos (mismo tamaño todos) ----- */
 function svgPin() {
   return `
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -894,6 +866,21 @@ function svgCarousel() {
       <rect x="8" y="2" width="9" height="9" rx="2" stroke="white" stroke-width="0.9" fill="none" opacity="0.5"/>
     </svg>
   `;
+}
+
+/* =========================
+   Owners toggle
+   ========================= */
+
+function onToggleOwners() {
+  state.showOwners = !state.showOwners;
+  updateOwnersToggleLabel();
+  renderGrid(state.posts);
+}
+
+function updateOwnersToggleLabel() {
+  if (!els.toggleOwners) return;
+  els.toggleOwners.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
 }
 
 /* =========================
