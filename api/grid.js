@@ -47,8 +47,7 @@ export default async function handler(req,res){
     const titleKey    = firstExisting(meta, TITLE_CANDS,    'title');
     const dateKey     = firstExisting(meta, DATE_CANDS,     'date');
     const ownerKey    = firstExisting(meta, OWNER_CANDS,    'people');
-    // ⬇️ ahora acepta tanto 'status' como 'select'
-    const statusKey   = firstExisting(meta, STATUS_CANDS,   ['status','select']);
+    const statusKey   = firstExisting(meta, STATUS_CANDS,   'select');
     const platformKey = firstExisting(meta, PLATFORM_CANDS, 'multi_select');
     const pinnedKey   = firstExisting(meta, PINNED_CANDS,   'checkbox');
     const hideKey     = firstExisting(meta, HIDE_CANDS,     'checkbox');
@@ -64,23 +63,8 @@ export default async function handler(req,res){
       and.push({ property: hideKey, checkbox:{ equals:false }});
     }
 
-    // ✅ soporta propiedades Notion tipo "status" o "select"
     if(statusKey && sel.statuses.length===1){
-      const statusProp = meta.properties[statusKey];
-      const val = sel.statuses[0];
-
-      if (statusProp?.type === 'status'){
-        and.push({
-          property: statusKey,
-          status:{ equals: val }
-        });
-      } else {
-        // fallback: select (como antes)
-        and.push({
-          property: statusKey,
-          select:{ equals: val }
-        });
-      }
+      and.push({ property: statusKey, select:{ equals: sel.statuses[0] }});
     }
 
     if(platformKey && sel.platforms.length){
@@ -165,14 +149,12 @@ function asArray(v){
   return Array.isArray(v) ? v : [v];
 }
 
-// ⬇️ ahora acepta 1 string o array de tipos (igual que en filters.js)
-function firstExisting(meta, candidates, types){
-  const want = Array.isArray(types) ? types : (types ? [types] : null);
+function firstExisting(meta, candidates, type){
   for(const key of candidates){
     const prop = meta.properties[key];
     if(!prop) continue;
-    if(!want) return key;
-    if(want.includes(prop.type)) return key;
+    if(!type) return key;
+    if(prop.type === type) return key;
   }
   return undefined;
 }
