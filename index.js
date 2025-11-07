@@ -714,31 +714,38 @@ function moveModal(step) {
   renderModal();
 }
 
-/* === renderModal: Canva/Drive en iframe y botón para Canva === */
+/* === renderModal: tamaños coherentes (máx 800x600 / 90% viewport) === */
 function renderModal() {
   const a = state.modal.assets[state.modal.index];
+
+  // estilos comunes para media dentro del modal
+  const mediaBoxStyle =
+    'max-width:min(800px,90vw);max-height:min(600px,90vh);width:100%;height:auto;object-fit:contain;display:block;';
+
   if (a.type === 'video') {
     els.vStage.innerHTML = `<video controls playsinline src="${escapeHtml(
       a.url
-    )}" style="max-width:100%;max-height:60vh;object-fit:contain"></video>`;
+    )}" style="${mediaBoxStyle}"></video>`;
   } else if (a.type === 'external') {
     if (a.provider === 'canva') {
       els.vStage.innerHTML = `
-        <div style="width:100%;display:flex;flex-direction:column;gap:8px;align-items:center">
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
           <iframe src="${escapeHtml(
             a.url
-          )}" style="width:100%;min-height:60vh;border:0;" allow="autoplay; encrypted-media"></iframe>
-          <a href="${escapeHtml(a.url)}" target="_blank" rel="noopener" class="btn" style="text-decoration:none">Open in Canva</a>
+          )}" style="width:min(800px,90vw);height:min(600px,90vh);border:0;" allow="autoplay; encrypted-media"></iframe>
+          <a href="${escapeHtml(
+            a.url
+          )}" target="_blank" rel="noopener" class="btn" style="text-decoration:none">Open in Canva</a>
         </div>`;
     } else {
       els.vStage.innerHTML = `<iframe src="${escapeHtml(
         a.url
-      )}" style="width:100%;min-height:60vh;border:0;" allow="autoplay; encrypted-media"></iframe>`;
+      )}" style="width:min(800px,90vw);height:min(600px,90vh);border:0;" allow="autoplay; encrypted-media"></iframe>`;
     }
   } else {
     els.vStage.innerHTML = `<img alt="" src="${escapeHtml(
       a.url
-    )}" style="max-width:100%;max-height:60vh;object-fit:contain" />`;
+    )}" style="${mediaBoxStyle}" />`;
   }
 
   const tot = state.modal.assets.length;
