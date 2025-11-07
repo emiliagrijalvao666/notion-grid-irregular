@@ -35,9 +35,6 @@ const els = {
 
   // ⚙️ botón engranaje
   gear: document.getElementById('btnGear'),
-
-  // 👤 toggle owners
-  toggleOwners: document.getElementById('btnToggleOwners'),
 };
 
 /* ----- State ----- */
@@ -87,7 +84,7 @@ const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', '
     'vNext',
     'vDots',
     'vCopy',
-    // si falta el gear o el toggle no rompemos nada, solo avisamos
+    // si falta el gear no rompemos nada, solo avisamos
   ];
   const missing = required.filter((id) => !document.getElementById(id));
   if (missing.length) {
@@ -109,12 +106,6 @@ async function init() {
   // ⚙️ engranaje (mostrar/ocultar filtros)
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
-  }
-
-  // 👤 toggle owners
-  if (els.toggleOwners) {
-    els.toggleOwners.addEventListener('click', onToggleOwners);
-    updateOwnersToggleLabel();
   }
 
   // placeholders iniciales
@@ -232,7 +223,14 @@ function normalizeFilters(json) {
   return { clients, projects, platforms, owners, statuses };
 }
 
-function renderMenu(container, list, key, labelFn, valueFn, opts = { multi: true, searchable: true, initials: false }) {
+function renderMenu(
+  container,
+  list,
+  key,
+  labelFn,
+  valueFn,
+  opts = { multi: true, searchable: true, initials: false }
+) {
   container.innerHTML = '';
 
   // search box
@@ -258,6 +256,23 @@ function renderMenu(container, list, key, labelFn, valueFn, opts = { multi: true
 
   const box = document.createElement('div');
   container.appendChild(box);
+
+  // 🔁 Toggle "Show owners / Hide owners" dentro del dropdown de owners
+  let ownersToggleRow = null;
+  if (key === 'owners') {
+    ownersToggleRow = document.createElement('div');
+    ownersToggleRow.className = 'option';
+    ownersToggleRow.setAttribute('data-owner-toggle', '1');
+    ownersToggleRow.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
+    ownersToggleRow.addEventListener('click', (e) => {
+      e.stopPropagation();
+      state.showOwners = !state.showOwners;
+      ownersToggleRow.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
+      renderGrid(state.posts);
+    });
+    // va antes de la lista real
+    container.insertBefore(ownersToggleRow, box);
+  }
 
   const renderList = (term = '') => {
     box.innerHTML = '';
@@ -314,6 +329,9 @@ function renderMenu(container, list, key, labelFn, valueFn, opts = { multi: true
 
 function highlightSelection(container, key, valueFn, labelFn) {
   container.querySelectorAll('.option').forEach((el) => {
+    // ignorar la fila especial de toggle owners
+    if (el.getAttribute('data-owner-toggle') === '1') return;
+
     const name = el.querySelector('span:last-child')?.textContent || '';
     const list = state.filtersData[key] || [];
     const it = list.find((x) => (labelFn(x) || '') === name);
@@ -532,7 +550,7 @@ function renderGrid(list) {
   hookCardEvents();
 }
 
-/* === renderCard con miniatura de Drive y label para otros external === */
+/* === renderCard con prioridad IG & pin a la derecha === */
 function renderCard(p) {
   const first = p.media && p.media[0];
   const hasMulti = (p.media?.length || 0) > 1;
@@ -559,7 +577,7 @@ function renderCard(p) {
       if (first.provider === 'drive' && first.thumb) {
         mediaEl = `<img class="card__media" alt="" src="${escapeHtml(first.thumb)}" />`;
       } else if (first.provider !== 'link') {
-        const label = first.provider === 'canva' ? 'Canva' : (first.provider === 'drive' ? 'Drive' : 'Link');
+        const label = first.provider === 'canva' ? 'Canva' : first.provider === 'drive' ? 'Drive' : 'Link';
         mediaEl = `<div class="card__external">${label}</div>`;
       } else {
         mediaEl = `<div class="card__external">Link</div>`;
@@ -841,7 +859,7 @@ function ownerColor(name) {
   return OWNER_COLORS[Math.abs(h) % OWNER_COLORS.length];
 }
 
-/* ----- Icons minimal blancos (mismo tamaño todos) ----- */
+/* ----- Icons minimal blancos ----- */
 function svgPin() {
   return `
     <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -866,21 +884,6 @@ function svgCarousel() {
       <rect x="8" y="2" width="9" height="9" rx="2" stroke="white" stroke-width="0.9" fill="none" opacity="0.5"/>
     </svg>
   `;
-}
-
-/* =========================
-   Owners toggle
-   ========================= */
-
-function onToggleOwners() {
-  state.showOwners = !state.showOwners;
-  updateOwnersToggleLabel();
-  renderGrid(state.posts);
-}
-
-function updateOwnersToggleLabel() {
-  if (!els.toggleOwners) return;
-  els.toggleOwners.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
 }
 
 /* =========================
