@@ -359,17 +359,29 @@ html,body{
   cursor:pointer;
 }
 
-/* ⬇️ Ajuste del paso 8: escenario sin tarjeta blanca, centrado sobre fondo oscuro */
+/* Escenario sin tarjeta blanca, centrado sobre fondo oscuro */
 .viewer__stage{
-  background:transparent;     /* sin recuadro blanco */
+  background:transparent;
   border-radius:0;
   padding:0;
   display:flex;
   align-items:center;
   justify-content:center;
-  min-height:60vh;           /* mantiene altura estable al cambiar de asset */
+  min-height:60vh;   /* mantiene altura estable al cambiar de asset */
   max-height:90vh;
   outline:none;
+}
+
+/* 🔒 Tamaño consistente para imagen / video / iframe dentro del modal */
+.viewer__stage img,
+.viewer__stage video,
+.viewer__stage iframe{
+  max-width:min(800px,90vw);
+  max-height:min(600px,90vh);
+  width:100%;
+  height:auto;
+  object-fit:contain;
+  display:block;
 }
 
 .viewer__nav{
@@ -382,7 +394,7 @@ html,body{
 
 .viewer__dots{
   font-size:12px;
-  color:#fff; /* ahora números y círculos en blanco */
+  color:#fff; /* números y círculos en blanco */
 }
 
 .nav{
@@ -394,8 +406,14 @@ html,body{
   cursor:pointer;
 }
 
+/* COPY del post: centrado y alineado con el modal */
 .viewer__copy{
   margin-top:10px;
   font-size:14px;
-  color:#fff; /* copy en blanco sobre fondo oscuro */
+  color:#fff;
+  max-width:min(800px,90vw);   /* mismo ancho que la media */
+  margin-left:auto;
+  margin-right:auto;
+  text-align:center;
+  line-height:1.4;
 }
