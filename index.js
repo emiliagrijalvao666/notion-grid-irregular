@@ -33,11 +33,8 @@ const els = {
   vDots: document.getElementById('vDots'),
   vCopy: document.getElementById('vCopy'),
 
-  // ⚙️ botón engranaje
+  // ⚙️ nuevo: botón engranaje
   gear: document.getElementById('btnGear'),
-
-  // 👤 nuevo: toggle de owners
-  toggleOwners: document.getElementById('btnOwners'),
 };
 
 /* ----- State ----- */
@@ -52,7 +49,7 @@ const state = {
   // lock desde URL (?client=...&project=...)
   locked: { clients: [], projects: [] },
 
-  // 👤 mostrar/ocultar iniciales de owners en las cards
+  // 👤 toggle para mostrar/ocultar iniciales de owners en las cards
   showOwners: false,
 };
 
@@ -87,7 +84,7 @@ const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', '
     'vNext',
     'vDots',
     'vCopy',
-    // si falta el gear o btnOwners no rompemos nada, solo avisamos
+    // si falta el gear no rompemos nada, solo avisamos
   ];
   const missing = required.filter((id) => !document.getElementById(id));
   if (missing.length) {
@@ -106,17 +103,13 @@ async function init() {
   els.refresh?.addEventListener('click', () => refresh(true));
   els.clear?.addEventListener('click', clearFilters);
 
-  // ⚙️ engranaje (mostrar/ocultar filtros)
+  // ⚙️ wire del engranaje (mostrar/ocultar filtros)
   if (els.gear && els.filtersWrap) {
     els.gear.addEventListener('click', onToggleFilters);
   }
 
-  // 👤 toggle owners
-  if (els.toggleOwners) {
-    els.toggleOwners.addEventListener('click', onToggleOwners);
-    els.toggleOwners.setAttribute('aria-pressed', 'false');
-    els.toggleOwners.textContent = 'Show owners';
-  }
+  // 👤 crear botón dinámico para toggle de Owners
+  setupOwnersToggle();
 
   // placeholders iniciales
   if (els.grid) els.grid.innerHTML = placeholderList(12);
@@ -129,6 +122,37 @@ async function init() {
 
   // 3) primer refresh
   await refresh(true);
+}
+
+/* =========================
+   Owners toggle (solo cards)
+   ========================= */
+
+function setupOwnersToggle() {
+  const right = document.querySelector('.toolbar .right');
+  if (!right) return;
+
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.id = 'btnOwners';
+  btn.className = 'btn btn--ghost';
+  btn.textContent = 'Show owners';
+  btn.setAttribute('aria-pressed', 'false');
+
+  btn.addEventListener('click', () => {
+    state.showOwners = !state.showOwners;
+    btn.setAttribute('aria-pressed', state.showOwners ? 'true' : 'false');
+    btn.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
+    // re-render del grid (sin recargar datos)
+    renderGrid(state.posts);
+  });
+
+  const clearBtn = document.getElementById('btnClear');
+  if (clearBtn && clearBtn.parentElement === right) {
+    right.insertBefore(btn, clearBtn);
+  } else {
+    right.appendChild(btn);
+  }
 }
 
 /* =========================
@@ -533,26 +557,27 @@ function renderGrid(list) {
   hookCardEvents();
 }
 
-/* === renderCard con prioridad IG & pin a la derecha === */
+/* === renderCard con miniatura de Drive y label para otros external === */
 function renderCard(p) {
   const first = p.media && p.media[0];
-  const hasMulti = (p.media?.length || 0) > 1;
-  const isVideo = !hasMulti && first && first.type === 'video';
+  const isVideo = first && first.type === 'video';
   const isExternal = first && first.type === 'external';
+  const hasMulti = (p.media?.length || 0) > 1;
 
   const ownerBadge = state.showOwners ? ownerSquare(p.owner) : '';
 
   const badges = `
     <div class="card__badges">
-      ${hasMulti ? `<span class="badge-ico" title="Carousel">${svgCarousel()}</span>` : ``}
-      ${!hasMulti && isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
       ${p.pinned ? `<span class="badge-ico" title="Pinned">${svgPin()}</span>` : ``}
+      ${isVideo ? `<span class="badge-ico" title="Video">${svgVideo()}</span>` : ``}
+      ${hasMulti ? `<span class="badge-ico" title="Carousel">${svgCarousel()}</span>` : ``}
+      ${hasMulti ? `<span class="badge-ico badge-ico__count" title="Items">${p.media.length}</span>` : ``}
     </div>
   `;
 
   let mediaEl = `<div class="placeholder">No content</div>`;
   if (first) {
-    if (first.type === 'video') {
+    if (isVideo) {
       mediaEl = `<video class="card__media" preload="metadata" muted playsinline src="${escapeHtml(
         first.url
       )}"></video>`;
@@ -842,31 +867,15 @@ function ownerColor(name) {
   return OWNER_COLORS[Math.abs(h) % OWNER_COLORS.length];
 }
 
-/* ----- Icons minimal blancos ----- */
+/* ----- Icons ----- */
 function svgPin() {
-  return `
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M14.5 2H5.5V3.5H6.5V10L4.5 12V13.5H9.25V18.5H10.75V13.5H15.5V12L13.5 10V3.5H14.5V2Z" fill="white"/>
-    </svg>
-  `;
+  return `<svg viewBox="0 0 24 24"><path d="M14 3l7 7-4 1-3 7-2-2-2-2 7-3 1-4-4-4z"/></svg>`;
 }
-
 function svgVideo() {
-  return `
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M7 5V15L15 10L7 5Z" fill="white"/>
-    </svg>
-  `;
+  return `<svg viewBox="0 0 24 24"><path d="M17 10l4-2v8l-4-2v2H3V8h14v2z"/></svg>`;
 }
-
 function svgCarousel() {
-  return `
-    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="4" y="6" width="9" height="9" rx="2" stroke="white" stroke-width="1.4" fill="none"/>
-      <rect x="6" y="4" width="9" height="9" rx="2" stroke="white" stroke-width="1.1" fill="none" opacity="0.75"/>
-      <rect x="8" y="2" width="9" height="9" rx="2" stroke="white" stroke-width="0.9" fill="none" opacity="0.5"/>
-    </svg>
-  `;
+  return `<svg viewBox="0 0 24 24"><path d="M3 7h14v10H3zM19 9h2v6h-2z"/></svg>`;
 }
 
 /* =========================
@@ -878,18 +887,4 @@ function onToggleFilters() {
   const hidden = els.filtersWrap.classList.toggle('filters--hidden');
   els.gear.setAttribute('aria-expanded', hidden ? 'false' : 'true');
   els.gear.title = hidden ? 'Show filters' : 'Hide filters';
-}
-
-/* =========================
-   Owners toggle
-   ========================= */
-
-function onToggleOwners() {
-  state.showOwners = !state.showOwners;
-  if (els.toggleOwners) {
-    els.toggleOwners.setAttribute('aria-pressed', state.showOwners ? 'true' : 'false');
-    els.toggleOwners.textContent = state.showOwners ? 'Hide owners' : 'Show owners';
-  }
-  // re-render sin recargar datos
-  renderGrid(state.posts);
 }
